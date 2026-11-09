@@ -1,93 +1,168 @@
 # Monitoramento ambiental — Londrina
 
-Aplicação das equipes de Backend, Frontend e Banco de Dados. Nesta etapa organizamos a execução local e preparamos a integração de **simulação histórica de chuva na próxima hora**, com a **v6 definida como modelo desta integração**.
+Aplicação web do projeto de monitoramento ambiental e **simulação histórica da probabilidade de chuva na próxima hora**, usando dados meteorológicos armazenados no Supabase e o modelo v6.
 
-## O que funciona e o que falta
+Este README descreve como configurar e executar a versão presente neste repositório. Os documentos em `docs/integration/` detalham os contratos entre as equipes; `docs/originals/` contém READMEs antigos apenas para consulta.
 
-- Frontend React/Vite: painel meteorológico e componentes existentes, com leitura do Supabase quando configurado.
-- Backend Flask: servidor executável com `GET /health` e adaptador das sete features da v6.
-- Ainda falta: carregar/verificar o modelo, consultar T e T−1h no banco, implementar previsão/persistência/histórico e adaptar a tela para busca por data/hora.
-- O formulário atual do frontend ainda usa `/previsao` e `/historico` com o contrato anterior. Essas rotas **não estão implementadas neste backend**. A referência para a adaptação é [o alinhamento das equipes](docs/integration/alinhamento_tres_equipes_integracao.md).
-- `/health` indica que o servidor responde; `integration_ready: false` deixa claro que não significa integração concluída.
+## 1. O que a aplicação contém
 
-## Estrutura
+- **Frontend:** React 18 + Vite. Apresenta o painel meteorológico, consulta dados do Supabase e possui o fluxo de busca histórica e previsão experimental.
+- **Backend:** Flask. Consulta os registros meteorológicos no Supabase, valida os dados de T e T−1h, executa o modelo v6 e grava/consulta as previsões.
+- **Banco:** Supabase, acessado pelo Backend via REST para a inferência e pelo Frontend para as consultas de visualização já existentes.
+- **Modelo:** pacote serializado `weather_ensemble.joblib` acompanhado de `manifest.json`. O modelo é carregado na inicialização do Backend, não treinado a cada previsão.
 
-```text
-backend/
-  app/main.py                 # Servidor e /health
-  src/models/weather_ensemble.py  # Adaptador v6 preservado
-  config.py                   # Fuso usado pelo adaptador
-  tests/                      # Testes de saúde e features
-  requirements.txt
-  .env.example
-frontend/
-  src/components/             # Tela e componentes existentes
-  src/services/               # Consultas ao banco e chamadas HTTP
-  src/lib/                    # Funções compartilhadas
-  package.json
-  package-lock.json
-  .env.example
-docs/
-  integration/                # Três documentos vigentes das equipes
-  originals/                  # READMEs originais preservados, não instruções atuais
-  continuidade.md             # Pendências e origem dos arquivos
-scripts/check_staged.py        # Proteção contra dados/modelos no commit
-```
+### Rotas do Backend implementadas
 
-## 1. Clonar e preparar o Git
+| Método | Rota | Função |
+|---|---|---|
+| `GET` | `/health` | Estado do Backend, modelo e banco |
+| `GET` | `/available-times` | Primeiro e último dia disponível no dataset |
+| `GET` | `/available-times?date=AAAA-MM-DD` | Horários elegíveis do dia |
+| `GET` | `/weather-inputs?reference_time=...` | Medidas de T e pressão de T−1h, sem gerar previsão |
+| `POST` | `/predict` | Executa o modelo e persiste a previsão |
+| `GET` | `/predictions` | Consulta o histórico de previsões |
+| `POST` | `/internal/predict` | Rota interna de inferência sem persistência; não é usada pelo fluxo normal do Frontend |
+
+O fluxo principal da interface é:
+
+1. Selecionar uma data e um horário disponibilizados pelo Backend.
+2. Buscar e visualizar as medidas meteorológicas daquele instante.
+3. Solicitar a previsão experimental.
+4. O Backend consulta novamente os dados, executa o modelo v6 e grava o resultado.
+5. O Frontend apresenta o resultado e atualiza o histórico.
+
+A simulação é **histórica**: não representa uma previsão meteorológica ao vivo e não aceita qualquer data futura.
+
+## 2. Requisitos
+
+Instale:
+
+- **Git**
+- **Python 3.14** (versão usada na validação deste projeto)
+- **Node.js e npm** compatíveis com o `frontend/package-lock.json` (validação realizada com Node 26.13.0 e npm 11.20.0)
+- Acesso ao projeto Supabase utilizado pela equipe
+- Os arquivos do modelo v6, quando for necessário gerar previsões reais
+
+Os comandos abaixo usam PowerShell no Windows. No macOS/Linux, adapte a ativação do ambiente virtual e a cópia dos arquivos `.env`.
+
+## 3. Baixar o projeto
 
 ```powershell
 git clone https://github.com/victorhukra/projeto-monitoramento-ambiental.git
 cd projeto-monitoramento-ambiental
-git config core.hooksPath .githooks
 ```
 
-O hook precisa de Python no PATH e é configurado em cada clone. Ele verifica o índice antes dos commits. `.gitignore` e o hook bloqueiam datasets, modelos, ambientes, credenciais por nome e arquivos acima de 1 MB. Eles não substituem a revisão do conteúdo: nunca inserir segredos no código. Não usar `git add -f` para contornar as regras.
+O ZIP também pode ser extraído diretamente; nesse caso, entre na pasta `projeto-monitoramento-ambiental-main`.
 
-## 2. Executar o backend
+## 4. Configurar e executar o Backend
 
-Use Python 3.14 para reproduzir o ambiente local verificado. O ambiente do **modelo real** ainda deve ser comparado com seu manifesto antes de carregar o artefato; não foi validado nesta etapa.
-
-Na raiz do projeto:
+Abra um terminal na raiz do projeto:
 
 ```powershell
 cd backend
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m flask --app app.main run --host 127.0.0.1 --port 8000
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements-lock.txt
 ```
 
-Em outro terminal:
+Crie o arquivo de configuração local a partir do exemplo:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edite `backend/.env`:
+
+```dotenv
+# Caminhos absolutos para os dois artefatos do modelo v6
+MODEL_PATH=C:/dados-monitoramento/model/weather_ensemble.joblib
+MODEL_MANIFEST_PATH=C:/dados-monitoramento/model/manifest.json
+
+# Credenciais do projeto Supabase usadas exclusivamente pelo Backend
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_chave_service_role
+
+# Origem do Frontend permitida pelo CORS
+FRONTEND_ORIGIN=http://localhost:5173
+```
+
+**Importante sobre a configuração:**
+
+- O Backend carrega automaticamente as variáveis de `backend/.env` ao inicializar.
+- `MODEL_PATH` e `MODEL_MANIFEST_PATH` devem apontar para os arquivos reais fornecidos pelo responsável pelo treinamento. O manifesto é validado junto com o hash SHA-256, versão, features e entradas esperadas.
+- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` são necessários para as consultas e gravações do Backend. A chave `service_role` é secreta: nunca a coloque no Frontend, no Git ou em mensagens públicas.
+- `FRONTEND_ORIGIN` deve corresponder exatamente à origem em que o Vite será executado. Se mudar a porta ou o host do Frontend, atualize essa variável e reinicie o Backend.
+- Sem as credenciais do banco, o servidor pode iniciar, mas as rotas que consultam dados retornarão indisponibilidade.
+- Sem o modelo e seu manifesto, o servidor pode iniciar, mas `/health` indicará que o modelo não foi carregado e `/predict` não conseguirá gerar uma previsão real.
+
+Inicie o Backend, ainda dentro de `backend/`:
+
+```powershell
+python -m flask --app app.main run --host 127.0.0.1 --port 8000
+```
+
+Mantenha esse terminal aberto. Em outro terminal, teste:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-O servidor de desenvolvimento é para uso local. Não é uma configuração de produção. Para parar: Ctrl+C.
+A resposta inclui `model_loaded`, `database_configured` e `integration_ready`. Para o fluxo real de previsão, os três componentes precisam estar configurados corretamente. `status: ok` sozinho significa apenas que o servidor respondeu.
 
-O backend atual não precisa de banco, dataset ou modelo para iniciar. `backend/.env.example` é uma referência das configurações previstas; **não há carregamento automático de `.env`**. As variáveis para banco/modelo só serão consumidas ao implementar esses serviços.
+### Testes do Backend
 
-## 3. Executar o frontend
+Com o ambiente virtual ativado e dentro de `backend/`:
 
-Use o Node.js compatível com o lockfile; a validação local desta migração usa Node 26.13.0 e npm 11.20.0.
+```powershell
+python -m unittest discover -s tests -v
+```
 
-Abra outro terminal na raiz:
+## 5. Configurar e executar o Frontend
+
+Abra outro terminal na raiz do projeto:
 
 ```powershell
 cd frontend
 npm ci
 Copy-Item .env.example .env
+```
+
+Edite `frontend/.env`:
+
+```dotenv
+# Configuração do Supabase usada pelas consultas de visualização do Frontend
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua_chave_publica_anon_ou_publishable
+
+# URL base do Backend Flask, sem barra no final
+VITE_API_URL=http://127.0.0.1:8000
+```
+
+Observações:
+
+- Use somente a chave pública `anon` ou `publishable` no Frontend. **Nunca use `service_role` ou `sb_secret` no navegador.**
+- A leitura direta do Supabase pelo Frontend depende das políticas/permissões RLS configuradas no projeto.
+- `VITE_API_URL` aponta para o Backend Flask. Se o Backend estiver em outro endereço, ajuste o valor.
+- Variáveis `VITE_*` são incorporadas ao código do navegador. Não coloque segredos nelas.
+- Sempre reinicie o Vite depois de alterar o `.env`.
+
+Inicie o Frontend:
+
+```powershell
 npm run dev -- --host 127.0.0.1
 ```
 
-Abra `http://127.0.0.1:5173/`. A rota de integração fica em `/integracao`. O caminho antigo de publicação `/Frontend-ProjetoIntegrador/` foi removido.
+Acesse:
 
-No `frontend/.env`, configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com a **chave pública**. As consultas de leitura dependem das permissões RLS do banco. Sem configuração, a tela informa a indisponibilidade: não inventa dados. Nunca colocar `service_role` ou outra chave secreta no frontend.
+- Aplicação: http://127.0.0.1:5173/
+- Tela de integração: http://127.0.0.1:5173/integracao
 
-`VITE_API_URL=http://127.0.0.1:8000` será usada na integração, mas configurar a URL não implementa as rotas que faltam. Reinicie o Vite ao alterar `.env`.
+Deixe os terminais do Backend e do Frontend abertos enquanto utiliza a aplicação.
 
-Verificações:
+### Testes e build do Frontend
+
+Dentro de `frontend/`:
 
 ```powershell
 npm test
@@ -95,29 +170,74 @@ npm run lint
 npm run build
 ```
 
-## Modelo, dados e integração
+## 6. Banco de dados e modelo
 
-Não copiar os 73 GB para o repositório. Esta aplicação não precisa das imagens GOES. Também não treina a cada pedido.
+### Supabase
 
-O responsável pelo treinamento deve fornecer por canal separado `weather_ensemble.joblib` e o manifesto correspondente, com versão, hash e ambiente. Guarde-os fora do repositório, por exemplo `C:/dados-monitoramento/modelo-v6/`. Não carregar artefatos de origem desconhecida. O adaptador mantém o caminho Python `src.models.weather_ensemble` e a configuração `config.WEATHER_TIMEZONE` para compatibilidade com o pacote existente; executar o backend a partir de `backend/`.
+O Backend acessa o Supabase pela API REST e espera encontrar:
 
-A v6 usa temperatura, umidade, pressão e nuvens em T, além da pressão de **exatamente T−1h**. O backend calcula temperatura × umidade, diferença de pressão e hora local. O usuário escolherá data/hora, não sete features.
+- Tabela meteorológica `dataset_weather_goes`, com `id`, `time`, `temperature_2m`, `relative_humidity_2m`, `pressure_msl` e `cloud_cover`.
+- Tabela de previsões `resultados_previsoes_ia`, com os campos utilizados para armazenar o resultado, incluindo `request_id`, `prediction_id`, `created_at`, os dados meteorológicos e os campos da previsão.
 
-Contratos vigentes:
+O horário armazenado na tabela meteorológica deve seguir a convenção adotada pela equipe para Londrina. O serviço interpreta os horários na zona `America/Sao_Paulo`.
+
+A migration `backend/sql/20261108_secure_prediction_access.sql` ajusta a obrigatoriedade de `request_id` e as permissões da tabela de resultados para que o Backend use a função `service_role`. Ela **não cria as tabelas nem substitui a configuração inicial do banco**. A equipe responsável pelo Supabase deve revisar e aplicar essa migration no projeto correto, depois de confirmar os dados existentes e as permissões.
+
+### Modelo v6
+
+O modelo precisa ser entregue separadamente como:
+
+- `weather_ensemble.joblib`
+- `manifest.json`
+
+Mantenha os arquivos fora do repositório, por exemplo em `C:/dados-monitoramento/model/`, e informe os caminhos absolutos em `backend/.env`. O Backend verifica o manifesto e carrega o modelo uma vez durante a inicialização.
+
+O modelo utiliza quatro medidas em T — temperatura, umidade relativa, pressão e cobertura de nuvens — e a pressão de exatamente T−1h. O Backend calcula as features derivadas exigidas pela v6. Não é necessário enviar as sete features pelo Frontend e não ocorre treinamento a cada clique.
+
+Sem os artefatos válidos do modelo, a aplicação pode abrir e o Backend pode responder ao health check, mas não deve ser considerada pronta para gerar previsões reais.
+
+## 7. Contrato de geração e histórico
+
+O Frontend envia para `POST /predict` somente:
+
+```json
+{
+  "mode": "historical",
+  "reference_time": "2026-09-01T14:00:00-03:00"
+}
+```
+
+Também envia o cabeçalho `Idempotency-Key` com um UUID. A chave deve ser mantida ao tentar novamente o mesmo pedido após timeout ou falha de rede. Não gere outra chave para contornar um pedido de resultado incerto.
+
+- `201`: previsão gravada pela primeira vez.
+- `200`: pedido repetido com a mesma chave e os mesmos dados; o Backend devolve o resultado já gravado.
+- `409`: conflito de idempotência ou pedido em processamento.
+- `422`: chave, horário ou dados inválidos.
+- `503`: banco, modelo ou gravação indisponível.
+
+O histórico usa `GET /predictions` com `created_from`, `created_to`, `limit` e, quando necessário, `cursor`. O intervalo de datas considera o momento em que a previsão foi **gerada**, não o horário histórico escolhido como referência.
+
+## 8. Documentação complementar
 
 - [Alinhamento das três equipes](docs/integration/alinhamento_tres_equipes_integracao.md)
-- [Demandas do Frontend](docs/integration/demandas_frontend_busca_e_previsao.md)
-- [Demandas do Banco](docs/integration/demandas_banco_busca_e_previsao.md)
+- [Demandas ao Frontend — busca histórica e previsão](docs/integration/demandas_frontend_busca_e_previsao.md)
+- [Demandas ao Banco — busca histórica e previsão](docs/integration/demandas_banco_busca_e_previsao.md)
+- [Continuidade, origem dos arquivos e pendências](docs/continuidade.md)
+- [Histórico e referências do projeto](docs/historico/README.md)
 
-Eles descrevem o que implementar, não rotas já disponíveis. Reenvios mantêm `Idempotency-Key`; primeira gravação retorna 201, repetição concluída retorna 200 e conflitos retornam 409 conforme os documentos.
+Os documentos em `docs/originals/` e `docs/historico/` são materiais de referência e registro; não substituem as instruções de execução deste README.
 
-## Trabalho em equipe
+## 9. Problemas comuns
 
-`main` guarda a base revisada. Criar `feature/nome-da-tarefa`, fazer commits pequenos e abrir pull request. Antes de juntar, executar os testes da parte alterada e revisar o diff. Não subir ambientes, segredos, dados ou modelos.
+| Problema | O que conferir |
+|---|---|
+| Frontend informa que o Backend não está configurado | `VITE_API_URL` no `frontend/.env`; reinicie o Vite |
+| Erro de conexão com o Backend | Backend em execução, endereço/porta e `FRONTEND_ORIGIN` |
+| Erro de CORS no navegador | `FRONTEND_ORIGIN` deve corresponder exatamente ao host e à porta do Frontend |
+| `/health` mostra `database_configured: false` | `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` em `backend/.env` |
+| `/health` mostra `model_loaded: false` | Caminhos, existência e compatibilidade do `.joblib` e do `manifest.json` |
+| `/predict` retorna `MISSING_PREVIOUS_HOUR` | Não existe registro meteorológico válido exatamente uma hora antes de T |
+| Não aparecem datas/horários | Verifique a tabela `dataset_weather_goes`, seus registros e os campos obrigatórios |
+| Frontend não carrega dados do painel | `VITE_SUPABASE_URL`, chave pública e políticas RLS |
 
-Os READMEs anteriores foram preservados integralmente em [docs/originals](docs/originals/). Seus caminhos/comandos descrevem os repositórios antigos. Para este repositório, use este README e [o roteiro de continuidade](docs/continuidade.md).
 
-
-## Memória do projeto
-
-O resumo das etapas, treinamento v6 e significado do instante T está em [docs/historico/](docs/historico/README.md), junto dos relatórios de referência e de uma cópia guardada deste README. Esse material explica o caminho percorrido; os contratos de integração continuam sendo a referência de implementação.
