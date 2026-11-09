@@ -25,6 +25,41 @@ export function monthSummary(rowsByYear, year, month) {
   };
 }
 
+const media = (vs) => (vs.length ? Math.round(vs.reduce((s, v) => s + v, 0) / vs.length) : null);
+
+// Dias de um mês a partir dos registros horários (t, mm, tempC, humidity, cloudPct), em ordem de data.
+// Por dia: chuva somada, horas com chuva (> 0 mm), temperatura máx./mín., umidade e nebulosidade médias,
+// e a parte do acumulado do mês que caiu naquele dia (pctMes). Registros sem valor ficam fora da conta.
+export function monthDays(rows) {
+  const byDate = new Map();
+  for (const r of rows ?? []) {
+    const date = typeof r?.t === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r.t) ? r.t.slice(0, 10) : null;
+    if (!date) continue;
+    const d = byDate.get(date) ?? { date, hours: 0, rain: [], temp: [], hum: [], cloud: [] };
+    d.hours += 1;
+    if (r.mm != null) d.rain.push(r.mm);
+    if (r.tempC != null) d.temp.push(r.tempC);
+    if (r.humidity != null) d.hum.push(r.humidity);
+    if (r.cloudPct != null) d.cloud.push(r.cloudPct);
+    byDate.set(date, d);
+  }
+  const dias = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({
+    date: d.date,
+    hours: d.hours,
+    rainMm: d.rain.length ? round1(d.rain.reduce((s, v) => s + v, 0)) : null,
+    rainyHours: d.rain.filter((v) => v > 0).length,
+    tMax: d.temp.length ? Math.max(...d.temp) : null,
+    tMin: d.temp.length ? Math.min(...d.temp) : null,
+    humidityAvg: media(d.hum),
+    cloudAvg: media(d.cloud),
+  }));
+  const total = dias.reduce((s, d) => s + (d.rainMm ?? 0), 0);
+  return dias.map((d) => ({ ...d, pctMes: total > 0 && d.rainMm != null ? (100 * d.rainMm) / total : null }));
+}
+
+// Ranking: mais chuva primeiro; empate (ex.: dias secos) pela data. Dias sem medida de chuva vão para o fim.
+export const rankByRain = (dias) => [...dias].sort((a, b) => (b.rainMm ?? -1) - (a.rainMm ?? -1) || a.date.localeCompare(b.date));
+
 export function dailyFromHours(rows, days = 7) {
   const byDate = new Map();
   for (const r of rows ?? []) {

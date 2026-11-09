@@ -55,17 +55,23 @@ export function Indicators({ city, climate, rainPeak, peakError, at, error }) {
 
 const deg = (v) => (v == null ? '—' : `${Math.round(v)}°`);
 
-// Últimos 7 dias observados: chuva acumulada no dia e temperatura máx./mín. (só leitura, sem seleção).
+// 7 dias observados: chuva acumulada no dia e temperatura máx./mín. (só leitura).
+// hours (opcional): quantos registros horários o dia tem no banco. 0 = sem registros; < 24 = dia incompleto.
 export function LastDays({ days, error }) {
   if (error) return <p className="err" role="alert">Não foi possível ler o banco: {error}</p>;
   if (!days?.length) return <Empty>Sem registros dos últimos dias.</Empty>;
   return (
     <ul className="week" aria-label="Chuva e temperatura dos últimos 7 dias">
       {days.map((d) => (
-        <li key={d.date} className="day">
+        <li key={d.date} className={`day${d.hours === 0 ? ' vazio' : ''}`}>
           <b>{fmtDay(d.date)}</b>
-          <span>{mm(d.rainMm)}</span>
-          <small>{deg(d.tMax)} / {deg(d.tMin)}</small>
+          {d.hours === 0 ? <span>sem registros</span> : (
+            <>
+              <span>{mm(d.rainMm)}</span>
+              <small>{deg(d.tMax)} / {deg(d.tMin)}</small>
+              {typeof d.hours === 'number' && d.hours < 24 && <small className="parcial">dados parciais ({d.hours}h)</small>}
+            </>
+          )}
         </li>
       ))}
     </ul>
@@ -97,7 +103,7 @@ export function RainEvents({ events, error }) {
 }
 
 // Mês do último registro do banco: acumulado (até o último registro) x média do mesmo mês nos anos anteriores.
-export function MonthPanel({ month, error }) {
+export function MonthPanel({ month, error, rotulo = 'Este mês' }) {
   if (error) return <p className="err" role="alert">Não foi possível ler o banco: {error}</p>;
   if (!month || month.accumulatedMm == null) return <Empty>Histórico mensal indisponível.</Empty>;
   const { accumulatedMm: a, historicalAvgMm: h } = month;
@@ -106,13 +112,11 @@ export function MonthPanel({ month, error }) {
   return (
     <div>
       <p className="note">
-        Acumulado de {month.label}{month.until ? ` (até ${fmtDay(month.until.slice(0, 10))})` : ''} vs. média de {month.monthName ?? 'mesmo mês'}
-        {month.fromYear ? ` em ${month.fromYear === month.toYear ? month.fromYear : `${month.fromYear}–${month.toYear}`}` : ''}.
+        Acumulado de {month.label}{month.until ? ` (até ${fmtDay(month.until.slice(0, 10))})` : ''}
+        {h != null && <> vs. média de {month.monthName ?? 'mesmo mês'}{month.fromYear ? ` em ${month.fromYear === month.toYear ? month.fromYear : `${month.fromYear}–${month.toYear}`}` : ''}</>}.
       </p>
-      <div className="bar-row"><span>Este mês: {mm(a)}</span><div className="bar"><i style={{ width: `${(a / max) * 100}%`, background: '#2563EB' }} /></div></div>
-      {h == null
-        ? <Empty>Média histórica indisponível: a comparação não pode ser feita agora.</Empty>
-        : <div className="bar-row"><span>Média histórica: {mm(h)}</span><div className="bar"><i style={{ width: `${(h / max) * 100}%`, background: '#BBD5F2' }} /></div></div>}
+      <div className="bar-row"><span>{rotulo}: {mm(a)}</span><div className="bar"><i style={{ width: `${(a / max) * 100}%`, background: '#2563EB' }} /></div></div>
+      {h != null && <div className="bar-row"><span>Média histórica: {mm(h)}</span><div className="bar"><i style={{ width: `${(h / max) * 100}%`, background: '#BBD5F2' }} /></div></div>}
       {verdict && <p><strong>O acumulado está {verdict}.</strong></p>}
     </div>
   );

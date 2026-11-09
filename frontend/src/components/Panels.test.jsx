@@ -12,9 +12,11 @@ describe('MonthPanel', () => {
     expect(screen.getByText('O acumulado está acima da média.')).toBeTruthy();
     expect(container.textContent).not.toContain('Fonte'); // a fonte fica só no rodapé
   });
-  it('sem anos anteriores: avisa que não dá para comparar', () => {
-    render(<MonthPanel month={{ ...month, historicalAvgMm: null, fromYear: null, toYear: null }} />);
-    expect(screen.getByText(/Média histórica indisponível/)).toBeTruthy();
+  it('sem anos anteriores: mostra só o acumulado, sem aviso nem comparação', () => {
+    const { container } = render(<MonthPanel month={{ ...month, historicalAvgMm: null, fromYear: null, toYear: null }} />);
+    expect(container.textContent).toContain('Este mês: 262,5 mm');
+    expect(container.textContent).not.toMatch(/Média histórica|média de|indisponível/);
+    expect(container.querySelector('.note').textContent).toBe('Acumulado de setembro de 2026 (até qua., 30).');
   });
 });
 

@@ -28,6 +28,16 @@ class WeatherRepository:
     def rows_at(self,timestamp):
         query={'select':'id,time,temperature_2m,relative_humidity_2m,pressure_msl,cloud_cover','time':f'eq.{timestamp}','limit':'2'}
         return self._request('dataset_weather_goes',query)
+    def time_bounds(self):
+        """Primeiro e último horário da tabela meteorológica (texto como o banco devolve) ou (None, None)."""
+        first=self._request('dataset_weather_goes',{'select':'time','order':'time.asc','limit':'1'})
+        last=self._request('dataset_weather_goes',{'select':'time','order':'time.desc','limit':'1'})
+        return (first[0]['time'] if first else None, last[0]['time'] if last else None)
+    def rows_between(self,start,end):
+        """Registros com start <= time < end (horário local, sem fuso, como gravado no banco)."""
+        query={'select':'id,time,temperature_2m,relative_humidity_2m,pressure_msl,cloud_cover',
+               'and':f'(time.gte.{start},time.lt.{end})','order':'time.asc','limit':'200'}
+        return self._request('dataset_weather_goes',query)
     def prediction_by_request_id(self,request_id):
         return self._request('resultados_previsoes_ia',{'select':'*','request_id':f'eq.{request_id}','limit':'2'})
     def insert_prediction(self,payload):

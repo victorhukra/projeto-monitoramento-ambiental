@@ -1,16 +1,19 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { getForecast } from './services/weatherApi.js';
 import { RainBars, TempLine } from './components/Charts.jsx';
-import { Indicators, LastDays, MonthPanel, Rain24h, RainEvents, Empty } from './components/Panels.jsx';
-import PredictionForm from './components/PredictionForm.jsx';
+import { Indicators, Rain24h, Empty } from './components/Panels.jsx';
+import MesPorData from './components/MesPorData.jsx';
+import SemanaPorData from './components/SemanaPorData.jsx';
 import HistoricoBusca from './components/HistoricoBusca.jsx';
+import PrevisaoExperimental from './components/PrevisaoExperimental.jsx';
+import StatusBackend from './components/StatusBackend.jsx';
 import PeriodComparison from './components/PeriodComparison.jsx';
-import { fmtDateTime, fmtDay, fmtFullDateTime } from './lib/format.js';
+import { fmtDateTime, fmtFullDateTime } from './lib/format.js';
 
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
 const CityMap = lazy(() => import('./components/CityMap.jsx'));
 
-const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Dados'], ['integracao', 'Integração']];
+const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Dados'], ['integracao', 'Previsão']];
 
 // Duas rotas sem roteador: "/" é o painel (Mapa, Agora, Semana e Dados são seções dele) e "/integracao" é outra tela.
 const RAIZ = import.meta.env.BASE_URL;
@@ -22,6 +25,9 @@ export default function App() {
   const [state, setState] = useState({ loading: true, data: null, error: null });
   const [tela, setTela] = useState(telaDaUrl);
   const [alvo, setAlvo] = useState(null); // seção para rolar depois da troca de tela
+  const [historicoVersao, setHistoricoVersao] = useState(0); // muda a cada previsão salva → histórico recarrega
+  const historicoRef = useRef(null);
+  const irParaHistorico = () => { historicoRef.current?.scrollIntoView(); historicoRef.current?.focus({ preventScroll: true }); };
 
   useEffect(() => {
     const voltar = () => setTela(telaDaUrl()); // botões voltar/avançar do navegador
@@ -56,7 +62,6 @@ export default function App() {
   const { data, loading, error } = state;
   const meta = data?.meta;
   const errs = meta?.errors ?? {}; // erro por consulta (allSettled)
-  const lastDay = data?.daily?.at(-1)?.date;
 
   return (
     <>
@@ -77,11 +82,13 @@ export default function App() {
 
       {tela === 'integracao' ? (
       <main className="wrap">
-        <h1>Integração com o backend</h1>
-        <p className="meta">Os dados desta tela vêm da API HTTP do backend.</p>
+        <h1>Previsão de chuva</h1>
+        <p className="meta">Os dados desta tela vêm da API HTTP do backend, que consulta o banco e executa o modelo.</p>
+        <StatusBackend />
         <div className="pilha">
-          <PredictionForm />
-          <HistoricoBusca />
+          <PrevisaoExperimental onPrevisaoSalva={() => setHistoricoVersao((v) => v + 1)} onConsultarHistorico={irParaHistorico} />
+          <HistoricoBusca ref={historicoRef} atualizacao={historicoVersao} />
+          <p className="note">Simulações históricas demonstram o funcionamento do sistema. Exemplos escolhidos na tela, inclusive de períodos usados no treino, não são uma avaliação independente do modelo.</p>
         </div>
       </main>
       ) : (
@@ -119,18 +126,11 @@ export default function App() {
         </section>
 
         <section id="semana" aria-labelledby="t-semana">
-          <h2 id="t-semana">Últimos 7 dias</h2>
-          <p className="note">Chuva acumulada no dia · temperatura máxima / mínima · registros observados{lastDay ? ` até ${fmtDay(lastDay)}` : ''}</p>
-          <LastDays days={data?.daily} error={errs.days} />
+          <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} />
         </section>
 
         <section id="dados" className="grid2">
-          <div className="card">
-            <h2>Histórico do mês</h2><MonthPanel month={data?.month} error={errs.history} />
-            <div className="about"><h3>Como lemos os dados</h3>
-              <p>{meta?.about ?? 'A descrição da origem dos dados, do modelo e da frequência de atualização ainda não foi informada.'}</p></div>
-          </div>
-          <RainEvents events={data?.rainEvents} error={errs.events} />
+          <MesPorData />
           <div className="card compare-card"><PeriodComparison latestDate={meta?.updatedAt} /></div>
         </section>
 

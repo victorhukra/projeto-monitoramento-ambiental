@@ -1,5 +1,6 @@
-import { CAMPOS, fmtValor } from '../lib/camposPrevisao.js';
-import { pct } from '../lib/format.js';
+import { MEDIDAS, fmtValor } from '../lib/camposPrevisao.js';
+import { fmtDataHoraCurta, fmtJanela, pct } from '../lib/format.js';
+import { entradasMudaram } from '../lib/previsaoUtil.js';
 
 const IconeChuva = () => (
   <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -12,17 +13,55 @@ const IconeSol = () => (
   </svg>
 );
 
-// Previsão devolvida pelo backend (o front só exibe). "enviados": os 4 valores enviados, quando houver.
-export default function ResultadoPrevisao({ resultado: { vaiChover, probabilidadePct }, legenda, enviados }) {
+// Previsão devolvida pelo backend: o front só exibe, não recalcula a classe nem usa o limiar.
+// previsao: objeto de services/previsaoApi.js (normalizarPrevisao).
+// consultadas: medidas da busca anterior (GET /weather-inputs), para avisar se mudaram.
+export default function ResultadoPrevisao({ previsao, legenda, consultadas, reenvio }) {
+  const { vaiChover, probabilidadePct, isMock, weather } = previsao;
+  const completo = previsao.forecastStart != null;
   return (
     <div className="card previsao" role="status" aria-label="Resultado da previsão">
+      {isMock && <p className="selo selo-mock">Resultado fictício para desenvolvimento</p>}
       <p className={`veredito ${vaiChover ? 'chuva' : 'seco'}`}>
         {vaiChover ? <IconeChuva /> : <IconeSol />}
-        <strong>{vaiChover ? 'Vai chover' : 'Não vai chover'}</strong>
+        <strong>{vaiChover ? 'Chuva prevista' : 'Sem chuva prevista'}</strong>
       </p>
-      <p className="prob"><strong>{pct(probabilidadePct)}</strong> de probabilidade de chuva</p>
-      <p className="note">{legenda}</p>
-      {enviados && <p className="note">Dados enviados: {CAMPOS.map((c) => `${c.rotulo} ${fmtValor(enviados[c.id], c.unidade)}`).join(' · ')}</p>}
+      <p className="prob"><strong>{pct(probabilidadePct)}</strong> de probabilidade estimada de chuva</p>
+      {legenda && <p className="note">{legenda}</p>}
+      {reenvio && <p className="note">Este pedido já tinha sido concluído: o servidor devolveu o registro salvo, sem gerar outra previsão.</p>}
+
+      {completo && (
+        <>
+          <dl className="ficha">
+            <div><dt>Período previsto</dt><dd>{fmtJanela(previsao.forecastStart, previsao.forecastEnd)}</dd></div>
+            <div><dt>Modo</dt><dd>{previsao.mode === 'historical' ? 'Simulação histórica' : previsao.mode ?? 'não informado'}</dd></div>
+            <div><dt>Gerada em</dt><dd>{fmtDataHoraCurta(previsao.createdAt) ?? 'não informado'}</dd></div>
+            <div><dt>Limiar de decisão</dt><dd>{previsao.limiarPct == null ? 'não informado' : pct(previsao.limiarPct)}</dd></div>
+            <div><dt>Versão do modelo</dt><dd><code>{previsao.modelVersion ?? 'não informada'}</code></dd></div>
+            <div><dt>ID da previsão</dt><dd><code>{previsao.predictionId ?? 'não informado'}</code></dd></div>
+          </dl>
+          {entradasMudaram(weather, consultadas) && (
+            <p className="aviso" role="alert">O registro meteorológico foi atualizado entre a busca e a execução. Abaixo estão os valores efetivamente usados pelo modelo.</p>
+          )}
+          <h3 className="sub">Dados usados pelo modelo</h3>
+          <TabelaMedidas weather={weather} referenceTime={previsao.referenceTime} previousReferenceTime={previsao.previousReferenceTime} />
+        </>
+      )}
     </div>
+  );
+}
+
+// As 5 medidas (somente leitura), com unidade e o horário a que cada uma se refere.
+export function TabelaMedidas({ weather, referenceTime, previousReferenceTime }) {
+  return (
+    <ul className="medidas">
+      {MEDIDAS.map((m) => (
+        <li key={m.id}>
+          <span className="lbl">{m.rotulo}</span>
+          <strong>{fmtValor(weather?.[m.id], m.unidade)}</strong>
+          <small>{fmtDataHoraCurta(m.momento === 'T' ? referenceTime : previousReferenceTime) ?? 'horário não informado'}</small>
+        </li>
+      ))}
+    </ul>
   );
 }

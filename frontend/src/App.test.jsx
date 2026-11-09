@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as db from './test/dbFixture.js';
 
 // A página só mostra dados do banco: nos testes, o "banco" são as respostas de dbFixture.js.
@@ -10,6 +10,15 @@ vi.mock('./services/forecastRepo.js', async () => {
   return {
     getCurrent: async () => fx.current, getLast24h: async () => fx.last24, getLastDays: async () => fx.lastDays,
     getRainEvents: async () => fx.events, getStation: async () => fx.station, getMonthHours: async (_s, y, m) => fx.monthHours(y, m),
+    getMonthDetail: async (_s, y, m) => fx.monthHours(y, m).map((r, i) => ({ ...r, temperatura_c: 15 + (i % 10), umidade_pct: 70, nuvens_pct: 50 })),
+    getTimeBounds: async () => ({ first: '2024-09-01T00:00:00', last: '2026-09-30T23:00:00' }),
+    // mesmo filtro da consulta real: [fim−6 dias, fim+1 dia), a partir dos setembros do fixture
+    getDaysEnding: async (_s, end) => [2024, 2025, 2026].flatMap((y) => fx.monthHours(y, 9))
+      .filter((r) => {
+        const d = r.horario.slice(0, 10), shift = (n) => new Date(Date.parse(`${end}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+        return d >= shift(-6) && d <= end;
+      })
+      .map((r) => ({ ...r, temperatura_c: 20 })),
     getDayHours: async (_s, y, m, d) => fx.monthHours(y, m).filter((row) => Number(row.horario.slice(8, 10)) === d),
     getMonthsWithData: async (_s, y) => Array.from({ length: 12 }, (_, i) => i + 1).filter((m) => fx.monthHours(y, m).length),
     getYearsWithData: async (_s, first, last) => Array.from({ length: last - first + 1 }, (_, i) => first + i)
@@ -64,6 +73,48 @@ describe('App (dados do banco)', () => {
     expect(screen.getByRole('heading', { name: /^Últimos 7 dias/ })).toBeTruthy();
     expect(screen.getByRole('list', { name: /últimos 7 dias/ }).querySelectorAll('li')).toHaveLength(7);
   });
+  it('últimos 7 dias: calendário limitado ao período do banco', async () => {
+    render(<App />);
+    await ready();
+    const data = await screen.findByLabelText('Ver 7 dias até');
+    expect(data.min).toBe('2024-09-01');
+    expect(data.max).toBe('2026-09-30');
+  });
+  it('últimos 7 dias: escolher uma data mostra os 7 dias que terminam nela', async () => {
+    render(<App />);
+    await ready();
+    const data = await screen.findByLabelText('Ver 7 dias até');
+    fireEvent.change(data, { target: { value: '2025-09-07' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar semana' }));
+    const lista = await screen.findByRole('list', { name: /últimos 7 dias/ });
+    await waitFor(() => expect(lista.textContent).toContain('2 mm')); // chove 2 mm nos dias 1 a 6 de set./2025 no fixture
+    const dias = screen.getByRole('list', { name: /últimos 7 dias/ }).querySelectorAll('li');
+    expect(dias).toHaveLength(7);
+    expect(dias[0].textContent).toMatch(/01/);
+    expect(dias[6].textContent).toMatch(/07/);
+    expect(dias[6].textContent).toContain('0 mm');
+    expect(screen.getByRole('heading', { name: /^7 dias até/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Mais recentes' }));
+    expect(screen.getByRole('heading', { name: 'Últimos 7 dias' })).toBeTruthy();
+  });
+  it('histórico do mês: escolher outro mês mostra o acumulado e os 10 dias mais chuvosos', async () => {
+    render(<App />);
+    await ready();
+    expect(await screen.findByRole('heading', { name: 'Dias mais chuvosos de setembro de 2026' })).toBeTruthy();
+    const form = within(screen.getByRole('form', { name: 'Escolher mês do histórico' }));
+    fireEvent.change(form.getByLabelText('Ano'), { target: { value: '2025' } });
+    fireEvent.change(form.getByLabelText('Mês'), { target: { value: '9' } });
+    fireEvent.click(form.getByRole('button', { name: 'Mostrar mês' }));
+    expect(await screen.findByText('Acumulado em setembro de 2025: 12 mm')).toBeTruthy(); // 6 dias × 2 mm no fixture
+    const tabela = screen.getByRole('heading', { name: 'Dias mais chuvosos de setembro de 2025' }).closest('section');
+    const linhas = tabela.querySelectorAll('tbody tr');
+    expect(linhas).toHaveLength(10);
+    expect(linhas[0].textContent).toContain('2 mm');
+    expect(linhas[0].textContent).toContain('17%'); // 2 de 12 mm
+    expect(linhas[6].textContent).toContain('0 mm'); // só 6 dias choveram
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todos os 30 dias' }));
+    expect(tabela.querySelectorAll('tbody tr')).toHaveLength(30);
+  });
   it('fonte só no rodapé, com o dia e o horário do último dado recebido', async () => {
     render(<App />);
     await ready();
@@ -84,7 +135,7 @@ describe('App (dados do banco)', () => {
   it('usa os dados do fixture (prova de que nada vem de outro lugar)', async () => {
     render(<App />);
     await ready();
-    expect(screen.getByText('Este mês: 6 mm')).toBeTruthy(); // 3 dias × 2 mm em setembro/2026 no fixture
+    expect(await screen.findByText('Este mês: 6 mm')).toBeTruthy(); // 3 dias × 2 mm em setembro/2026 no fixture
     expect(db.current.cidade).toBe('Londrina');
   });
 });

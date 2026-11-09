@@ -127,6 +127,51 @@ nav a[aria-current="page"] { background: var(--tint); color: var(--navy); }
 .prob strong { color: var(--navy); font-size: 1.6rem; }
 .busca { margin-bottom: 16px; }
 .resultado > .previsao { margin-top: 0; }
+/* Previsão experimental */
+.titulo-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 4px; }
+.titulo-linha h2 { margin: 0; }
+.selo { display: inline-block; padding: 2px 10px; border: 1px solid var(--light); border-radius: 999px; background: var(--tint); color: var(--navy); font-size: 0.78rem; font-weight: 600; }
+.selo-mock { margin: 0 0 8px; border-color: #f2c94c; background: #fff7dc; color: #7a5a00; }
+td .selo-mock { margin: 0 0 0 6px; }
+.aviso { margin: 12px 0; padding: 10px 12px; border: 1px solid #f2c94c; border-radius: 10px; background: #fff7dc; }
+.aviso p { margin: 4px 0; }
+.aviso .acoes { margin-top: 8px; }
+.sub { margin: 16px 0 8px; }
+.entradas { margin-top: 12px; }
+.medidas { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.medidas li { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.medidas .lbl, .medidas small { color: var(--muted); font-size: 0.8rem; }
+.medidas strong { color: var(--navy); font-size: 1.3rem; }
+.gerar { margin-top: 16px; }
+.ficha { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+.ficha div { min-width: 0; }
+.ficha dt { color: var(--muted); font-size: 0.8rem; }
+.ficha dd { margin: 0; overflow-wrap: anywhere; }
+code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.85em; overflow-wrap: anywhere; }
+.status-backend { margin-bottom: 12px; }
+.ponto { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 50%; background: #16a34a; }
+.mais { margin-top: 12px; }
+.ponto.falha { background: #d64545; }
+
+/* Últimos 7 dias com escolha de data */
+.semana-topo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.semana-topo h2 { margin-bottom: 0; }
+.semana-topo .note { margin-bottom: 0; }
+.semana-form { gap: 8px 12px; }
+.semana-form > .note { flex-basis: 100%; }
+.day.vazio { border-style: dashed; background: var(--bg); color: var(--muted); }
+.day .parcial, td .parcial { color: #7a5a00; }
+
+/* Histórico do mês com escolha de mês */
+.mes-form { gap: 8px 12px; margin-bottom: 12px; }
+.mes-form > .note { flex-basis: 100%; }
+.mes-form .campo select { text-transform: capitalize; }
+tr.seco td { color: var(--muted); }
+.pct-mes { position: relative; display: inline-block; min-width: 64px; padding: 1px 6px; border-radius: 6px; overflow: hidden; }
+.pct-mes i { position: absolute; inset: 0 auto 0 0; z-index: -1; background: var(--light); }
+.pct-mes { isolation: isolate; }
+.campo select:disabled, .campo input:disabled { background: var(--bg); color: var(--muted); }
+
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 18px; padding-bottom: 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
 
 @media (max-width: 900px) {

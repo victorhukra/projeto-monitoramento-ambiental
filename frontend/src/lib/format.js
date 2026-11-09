@@ -30,3 +30,29 @@ export const fmtFullDateTime = (iso) => (iso ? `${fmt(iso, { day: '2-digit', mon
 export const fmtDateTime = (iso) => fmt(iso, { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 export const fmtHour = (iso) => (iso ? fmt(iso, { hour: '2-digit', hour12: false }).replace(/\D/g, '') + 'h' : '—');
 export const fmtDay = (d) => fmt(`${d}T12:00:00-03:00`, { weekday: 'short', day: '2-digit' });
+
+// --- Previsão experimental: sempre no horário de Londrina, nunca no fuso do computador do usuário.
+// "14:00"
+export const fmtHoraMin = (iso) => fmt(iso, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+// "01/09/2026 14:00"
+export const fmtDataHoraCurta = (iso) => (iso ? `${fmt(iso, { day: '2-digit', month: '2-digit', year: 'numeric' })} ${fmtHoraMin(iso)}` : null);
+// Data "AAAA-MM-DD" → "01/09/2026"
+export const fmtDataIso = (d) => (d ? fmt(`${d}T12:00:00-03:00`, { day: '2-digit', month: '2-digit', year: 'numeric' }) : null);
+// Janela "01/09/2026, das 14:00 às 15:00" (ou com a data nas duas pontas, se virar o dia)
+export function fmtJanela(inicio, fim) {
+  if (!inicio || !fim) return 'indisponível';
+  const dia = (iso) => fmt(iso, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return dia(inicio) === dia(fim)
+    ? `${dia(inicio)}, das ${fmtHoraMin(inicio)} às ${fmtHoraMin(fim)}`
+    : `${fmtDataHoraCurta(inicio)} às ${fmtDataHoraCurta(fim)}`;
+}
+// Hoje em Londrina, "AAAA-MM-DD"
+export const hojeEmLondrina = (agora = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+// "AAAA-MM-DD" ± n dias
+export function somarDias(d, n) {
+  const dt = new Date(`${d}T12:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+// Meia-noite de Londrina do dia "AAAA-MM-DD", com fuso explícito
+export const inicioDoDia = (d) => `${d}T00:00:00-03:00`;

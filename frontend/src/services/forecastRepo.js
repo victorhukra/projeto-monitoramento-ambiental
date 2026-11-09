@@ -61,6 +61,30 @@ export const getLastDays = (signal) =>
     .limit(7 * 24 + 23)
     .abortSignal(signal));
 
+// Primeiro e último horário do banco: limites do calendário de "Últimos 7 dias".
+export const getTimeBounds = async (signal) => {
+  const edge = (ascending) => run(supabase.from(TABLE).select('time').order('time', { ascending }).limit(1).abortSignal(signal).maybeSingle());
+  const [first, last] = await Promise.all([edge(true), edge(false)]);
+  return { first: first?.time ?? null, last: last?.time ?? null };
+};
+
+// 7 dias que terminam em endDate ("AAAA-MM-DD", inclusive): registros horários de endDate−6 00:00 até endDate+1 00:00.
+// Até 7 × 24 = 168 linhas (com folga), abaixo do limite de 1000 do PostgREST.
+export const getDaysEnding = (signal, endDate) => {
+  const shift = (n) => {
+    const d = new Date(`${endDate}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  return run(supabase.from(TABLE)
+    .select('horario:time, temperatura_c:temperature_2m, chuva_mm:precipitation')
+    .gte('time', `${shift(-6)}T00:00:00`)
+    .lt('time', `${shift(1)}T00:00:00`)
+    .order('time', { ascending: true })
+    .limit(200)
+    .abortSignal(signal));
+};
+
 // Ponto de medição para o mapa (colunas latitude/longitude do dataset; não estão no .sql da equipe).
 export const getStation = (signal) =>
   run(supabase.from(TABLE).select('latitude, longitude').order('time', { ascending: false }).limit(1).abortSignal(signal).maybeSingle());
@@ -75,6 +99,20 @@ export const getMonthHours = (signal, year, month) => {
     .gte('time', `${year}-${pad(month)}-01T00:00:00`)
     .lt('time', `${next}-01T00:00:00`)
     .limit(750)
+    .abortSignal(signal));
+};
+
+// Registros horários de um mês com as medidas usadas no detalhe por dia (chuva, temperatura, umidade, nuvens).
+// 31 × 24 = 744 linhas no máximo, abaixo do limite de 1000 do PostgREST.
+export const getMonthDetail = (signal, year, month) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const next = month === 12 ? `${year + 1}-01` : `${year}-${pad(month + 1)}`;
+  return run(supabase.from(TABLE)
+    .select('horario:time, chuva_mm:precipitation, temperatura_c:temperature_2m, umidade_pct:relative_humidity_2m, nuvens_pct:cloud_cover')
+    .gte('time', `${year}-${pad(month)}-01T00:00:00`)
+    .lt('time', `${next}-01T00:00:00`)
+    .order('time', { ascending: true })
+    .limit(800)
     .abortSignal(signal));
 };
 

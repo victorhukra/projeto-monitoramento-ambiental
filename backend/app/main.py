@@ -9,6 +9,7 @@ from .settings import Settings
 from .weather_repository import WeatherRepository, RepositoryUnavailable, DuplicateRequest
 from .weather_service import get_weather_inputs
 from .prediction_service import predict
+from .availability_service import available_period, available_times
 from src.models.weather_ensemble import MODEL_VERSION
 
 def encode_cursor(row):
@@ -54,6 +55,11 @@ def create_app(settings=None,repository=None,model=None):
         return repository
     @app.get('/health')
     def health():return jsonify(status='ok',service='backend-londrina',model_loaded=bool(model),model_error=model_error,database_configured=bool(repository),integration_ready=bool(model and repository),model_version=model.model_version if model else MODEL_VERSION)
+    @app.get('/available-times')
+    def available():
+        # Sem ?date: período com dados. Com ?date=AAAA-MM-DD: horários elegíveis (T e T−1h válidos) do dia.
+        repo=database();day=request.args.get('date')
+        return jsonify(available_times(repo,day) if day is not None else available_period(repo))
     @app.get('/weather-inputs')
     def weather_inputs():
         result=get_weather_inputs(database(),request.args.get('reference_time'));result.pop('source_record_id',None);result.pop('previous_source_record_id',None);return jsonify(result)

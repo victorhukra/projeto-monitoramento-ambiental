@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase.js';
-import { getCurrent, getLast24h, getLastDays, getMonthHours, getRainEvents, getStation } from './forecastRepo.js';
+import { getCurrent, getDaysEnding, getLast24h, getLastDays, getMonthDetail, getMonthHours, getRainEvents, getStation, getTimeBounds } from './forecastRepo.js';
 import { dbTimeToIso } from '../lib/format.js';
-import { dailyFromHours, rainChance, monthSummary } from '../lib/daily.js';
+import { dailyFromHours, monthDays, rainChance, monthSummary } from '../lib/daily.js';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // depois disso a consulta é refeita
 // wind_speed_10m está em m/s: no teste de 27/10/2026 o máximo da tabela foi 8,98 e a média recente 2,5.
@@ -123,6 +123,68 @@ function normalize(raw) {
       fromYear: num(mo.fromYear), toYear: num(mo.toYear), until: str(mo.until), source: str(mo.source),
     } : null,
   };
+}
+
+// Período coberto pelo banco, em datas locais "AAAA-MM-DD": { minDate, maxDate } (null se a tabela estiver vazia).
+export async function getDataPeriod({ signal } = {}) {
+  if (!supabase) throw new Error(NOT_CONFIGURED);
+  const hit = fresh('periodo');
+  if (hit) return hit;
+  const { first, last } = await getTimeBounds(signal);
+  const day = (v) => dbTimeToIso(v)?.slice(0, 10) ?? null;
+  const data = { minDate: day(first), maxDate: day(last) };
+  cache.set('periodo', { at: Date.now(), data });
+  return data;
+}
+
+// Os 7 dias que terminam em endDate (inclusive), do mais antigo para o mais recente.
+// Dias sem nenhum registro no banco aparecem com valores null (a tela mostra "sem registros"); nada é inventado.
+export async function getWeekEnding(endDate, { signal } = {}) {
+  if (!supabase) throw new Error(NOT_CONFIGURED);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(endDate))) throw new Error('Data inválida.');
+  const rows = await getDaysEnding(signal, endDate);
+  if (signal?.aborted) throw aborted();
+  const byDate = new Map(dailyFromHours(hours(rows), 7).map((d) => [d.date, d]));
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(`${endDate}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 6 + i);
+    const date = d.toISOString().slice(0, 10);
+    const found = byDate.get(date);
+    return found
+      ? { date, rainMm: num(found.rainMm), tMin: num(found.tMin), tMax: num(found.tMax), hours: found.hours }
+      : { date, rainMm: null, tMin: null, tMax: null, hours: 0 };
+  });
+}
+
+// Relatório de um mês escolhido (ano, mês 1–12), só com registros do banco:
+// - acumulado do mês x média do mesmo mês nos até 10 anos anteriores que têm o mês quase completo (monthSummary);
+// - os dias do mês com chuva, temperatura máx./mín., umidade e nuvens médias e a parte do acumulado de cada dia.
+export async function getMonthReport(year, month, { signal } = {}) {
+  if (!supabase) throw new Error(NOT_CONFIGURED);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) throw new Error('Mês inválido.');
+  const key = `mes:${year}-${month}`;
+  const hit = fresh(key);
+  if (hit) return hit;
+  const anteriores = Array.from({ length: HISTORY_YEARS }, (_, i) => year - HISTORY_YEARS + i);
+  const [detalhe, ...porAno] = await Promise.all([getMonthDetail(signal, year, month), ...anteriores.map((y) => getMonthHours(signal, y, month))]);
+  if (signal?.aborted) throw aborted();
+  const linhas = arr(detalhe).map((r) => ({
+    t: dbTimeToIso(r?.horario), mm: num(r?.chuva_mm), tempC: num(r?.temperatura_c), humidity: num(r?.umidade_pct), cloudPct: num(r?.nuvens_pct),
+  }));
+  const byYear = { [year]: linhas, ...Object.fromEntries(anteriores.map((y, i) => [y, hours(porAno[i])])) };
+  const resumo = monthSummary(byYear, year, month);
+  const name = monthName(month);
+  const data = {
+    year, month, monthName: name, label: `${name} de ${year}`,
+    hours: linhas.length, expectedHours: new Date(Date.UTC(year, month, 0)).getUTCDate() * 24,
+    from: linhas[0]?.t ?? null, until: linhas.at(-1)?.t ?? null,
+    accumulatedMm: linhas.length ? resumo.accumulatedMm : null,
+    historicalAvgMm: resumo.historicalAvgMm, fromYear: resumo.fromYear, toYear: resumo.toYear,
+    days: monthDays(linhas),
+    source: 'Banco do projeto (Supabase)',
+  };
+  cache.set(key, { at: Date.now(), data });
+  return data;
 }
 
 export async function getForecast({ signal } = {}) {
