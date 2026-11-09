@@ -116,6 +116,9 @@ nav a[aria-current="page"] { background: var(--tint); color: var(--navy); }
 .pilha > * { min-width: 0; } /* sem isso a tabela do histórico alarga a coluna e a página (a tabela rola dentro de .scroll) */
 .acoes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .acoes > p { margin: 0; }
+/* botão secundário numa linha de ações: mesma altura do .btn e sem a margem de baixo do .link solto,
+   senão ele fica desalinhado ao lado de "Mostrar dia", "Mostrar semana", "Gerar previsão" etc. */
+.acoes .link { min-height: 44px; margin-bottom: 0; font-weight: 600; }
 .btn { min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 600; }
 .previsao { margin-top: 16px; border-color: var(--light); background: var(--tint); }
 .previsao p { margin: 4px 0; }
@@ -152,11 +155,13 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .ponto { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 50%; background: #16a34a; }
 .mais { margin-top: 12px; }
 
-/* Últimos 7 dias com escolha de data */
-.semana-topo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+/* Resumo do dia e últimos 7 dias com escolha de data: título em cima, formulário embaixo, alinhados à esquerda
+   (lado a lado, o formulário ficava solto no meio da página e mudava de lugar conforme a largura da tela) */
+.semana-topo { display: grid; gap: 12px; margin-bottom: 12px; }
 .semana-topo h2 { margin-bottom: 0; }
 .semana-topo .note { margin-bottom: 0; }
 .semana-form { gap: 8px 12px; }
+.semana-form .campo { flex: 0 1 200px; }
 .semana-form > .note { flex-basis: 100%; }
 .day.vazio { border-style: dashed; background: var(--bg); color: var(--muted); }
 .day .parcial, td .parcial { color: #7a5a00; }
@@ -191,6 +196,9 @@ tr.seco td { color: var(--muted); }
   .period-form, .period-results, .period-charts { grid-template-columns: 1fr; }
   .period-charts { grid-column: auto; }
   .period-difference { grid-column: auto; }
+  /* celular: data na linha inteira e os botões lado a lado, dividindo a largura */
+  .semana-form .campo { flex-basis: 100%; }
+  .semana-form .btn, .semana-form .link { flex: 1 1 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
