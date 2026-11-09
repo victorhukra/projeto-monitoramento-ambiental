@@ -1,0 +1,90 @@
+{
+  "model_version": "weather-v6-simple-mean-isotonic-v1",
+  "artifact_status": "integration_candidate_not_operationally_approved",
+  "created_at_utc": "2026-11-05T19:03:29.529711+00:00",
+  "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+  "numpy": "2.5.4",
+  "pandas": "3.0.1",
+  "scikit_learn": "1.9.1",
+  "joblib": "1.6.0",
+  "source_experiment": "weather_v6_20261105T120000Z",
+  "evaluation_reference": "weather_v7_20261105T183313Z",
+  "source_dataset_sha256": "a3ea57e03c9b66e575cecbcc47a673a9af69c7c6aeeb5d6f07a18b0e69b609d3",
+  "oof_predictions_sha256": "dc8ce18a4f5f837ea1a2847002b1dfe41e8d1900c1d390158d1a42c03b894328",
+  "features": [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "pressure_msl",
+    "cloud_cover",
+    "temp_humidity",
+    "pressure_diff",
+    "hour_of_day"
+  ],
+  "required_weather_inputs": [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "pressure_msl",
+    "cloud_cover",
+    "pressure_msl_previous_hour"
+  ],
+  "feature_engineering": {
+    "temp_humidity": "temperature_2m * relative_humidity_2m",
+    "pressure_diff": "pressure_msl - pressure_msl_previous_hour (T-1h)",
+    "hour_of_day": "reference_time converted to America/Sao_Paulo, hour"
+  },
+  "members": {
+    "original": {
+      "class_weight": null,
+      "n_estimators": 400,
+      "min_samples_leaf": 10,
+      "random_state": 42,
+      "v6_model_sha256": "7bfbc50f95de186daf56e56b0d5556d4a5f74e521c55695f54ab9cca71befc6c",
+      "calibration": "isotonic",
+      "calibration_oof_rows": 105180
+    },
+    "balanced": {
+      "class_weight": "balanced",
+      "n_estimators": 400,
+      "min_samples_leaf": 10,
+      "random_state": 42,
+      "v6_model_sha256": "d220c83bb351baca034d1d507bbc53b9055080f598e50df01f848e266de4aee7",
+      "calibration": "isotonic",
+      "calibration_oof_rows": 105180
+    },
+    "balanced_subsample": {
+      "class_weight": "balanced_subsample",
+      "n_estimators": 400,
+      "min_samples_leaf": 10,
+      "random_state": 42,
+      "v6_model_sha256": "ce5596dfe0dab748d8690c0a02240197da768d8e33d28b23207e564e7ed1814b",
+      "calibration": "isotonic",
+      "calibration_oof_rows": 105180
+    }
+  },
+  "weights": {
+    "original": 0.3333333333333333,
+    "balanced": 0.3333333333333333,
+    "balanced_subsample": 0.3333333333333333
+  },
+  "threshold": 0.5,
+  "threshold_status": "provisional; use response field decision_threshold",
+  "test_2026_used": false,
+  "independent_blind_test": false,
+  "bundle_file": "weather_ensemble.joblib",
+  "bundle_sha256": "04e23b9b7606254febb18ac630c439bcbb81f3c43ac69d6ab15ff92c99ccb41e",
+  "calibrators_file": "isotonic_calibrators.joblib",
+  "calibrators_sha256": "76572a2f8fe12eb3f45d8a4e9c8dd90309aa3d3d3f86fcb2169cddd24ee14cb4",
+  "feature_compatibility_smoke": {
+    "passed": true,
+    "reference_time": "2020-01-01 04:00:00+00:00",
+    "model_output": {
+      "rain_probability": 0.09974892357908238,
+      "rain_predicted": false,
+      "decision_threshold": 0.5,
+      "model_version": "weather-v6-simple-mean-isotonic-v1"
+    },
+    "note": "feature-parity check only; not a performance test"
+  },
+  "adapter_sha256": "1f5cf1279598bab59aec67c4cd6de0d201d6435701ff1fa8521e0f8d14c21516",
+  "packager_sha256": "14bbc4f902fd820ab3303076dbedf469b78db0ff0788a1aa679899071100b0d3"
+}
