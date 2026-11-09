@@ -41,11 +41,20 @@ def create_app(settings=None,repository=None,model=None):
     app.extensions.update(weather_model=model,weather_repository=repository)
     @app.after_request
     def cors(response):
-        origin=request.headers.get('Origin')
-        if origin and origin==settings.frontend_origin:
-            response.headers['Access-Control-Allow-Origin']=origin;response.headers['Vary']='Origin'
-            response.headers['Access-Control-Allow-Headers']='Content-Type, Idempotency-Key'
-            response.headers['Access-Control-Allow-Methods']='GET, POST, OPTIONS'
+        origin = request.headers.get('Origin')
+
+        allowed_origins = {
+            value.strip().rstrip('/')
+            for value in settings.frontend_origin.split(',')
+            if value.strip()
+        }
+
+        if origin and origin.rstrip('/') in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Vary'] = 'Origin'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Idempotency-Key'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+
         return response
     @app.route('/',defaults={'path':''},methods=['OPTIONS'])
     @app.route('/<path:path>',methods=['OPTIONS'])
