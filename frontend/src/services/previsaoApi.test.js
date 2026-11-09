@@ -16,15 +16,16 @@ const PREVISAO = {
 
 const resposta = (status, corpo) => Promise.resolve(new Response(corpo == null ? '' : JSON.stringify(corpo), { status }));
 
-let api, fetchMock;
+let api, fetchMock, log;
 beforeEach(async () => {
   vi.resetModules();
+  log = vi.spyOn(console, 'error').mockImplementation(() => {}); // erros técnicos vão para o console
   vi.stubEnv('VITE_API_URL', 'http://api.test/');
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
   api = await import('./previsaoApi.js');
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); log.mockRestore(); });
 
 describe('previsaoApi (contrato v6)', () => {
   it('período disponível', async () => {
@@ -47,11 +48,48 @@ describe('previsaoApi (contrato v6)', () => {
     expect(r.previousReferenceTime).toBe('2026-09-01T13:00:00-03:00');
   });
 
-  it('erro no envelope { error: { code, message } } vira ApiError legível', async () => {
-    fetchMock.mockReturnValue(resposta(422, { error: { code: 'MISSING_PREVIOUS_HOUR', message: 'Falta a pressão da hora anterior.', field: 'reference_time' } }));
+  it('erro no envelope { error: { code, message } } vira ApiError com texto amigável; a mensagem do servidor fica no detalhe e no console', async () => {
+    fetchMock.mockReturnValue(resposta(422, { error: { code: 'MISSING_PREVIOUS_HOUR', message: 'Falta o registro meteorológico de exatamente T−1h.', field: 'reference_time' } }));
     const e = await api.buscarEntradas('2026-09-01T00:00:00-03:00').catch((x) => x);
     expect(e).toBeInstanceOf(api.ApiError);
-    expect(e).toMatchObject({ status: 422, code: 'MISSING_PREVIOUS_HOUR', message: 'Falta a pressão da hora anterior.', incerto: false });
+    expect(e).toMatchObject({
+      status: 422, code: 'MISSING_PREVIOUS_HOUR', field: 'reference_time', incerto: false,
+      message: 'Faltam medições da hora anterior a este horário. Escolha outro horário.',
+      detalhe: 'Falta o registro meteorológico de exatamente T−1h.',
+    });
+    expect(JSON.stringify(log.mock.calls)).toContain('T−1h');
+  });
+
+  it('erro 500 com corpo HTML (fora do envelope) não expõe "Internal Server Error"', async () => {
+    fetchMock.mockReturnValue(Promise.resolve(new Response('<h1>Internal Server Error</h1>', { status: 500 })));
+    const e = await api.buscarPeriodo().catch((x) => x);
+    expect(e).toMatchObject({ status: 500, code: null, incerto: false });
+    expect(e.message).toBe('O serviço está indisponível no momento. Tente novamente em alguns minutos.');
+  });
+
+  it('falha de rede e tempo esgotado têm textos próprios, sem termos técnicos', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    const rede = await api.buscarPeriodo().catch((x) => x);
+    expect(rede.message).toBe('Sem conexão com o serviço. Verifique sua internet e tente novamente.');
+    expect(rede.detalhe).toBe('Failed to fetch');
+    vi.useFakeTimers();
+    fetchMock.mockImplementation((_url, { signal }) => new Promise((_, rejeitar) => signal.addEventListener('abort', () => rejeitar(new DOMException('aborted', 'AbortError')))));
+    const pendente = api.buscarPeriodo().catch((x) => x);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const demora = await pendente;
+    vi.useRealTimers();
+    expect(demora).toMatchObject({ incerto: true, message: 'O serviço está demorando para responder. Aguarde um pouco e tente novamente.' });
+  });
+
+  it('sem VITE_API_URL: texto genérico na tela, instrução técnica só no console', async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_API_URL', '');
+    const semConfig = await import('./previsaoApi.js');
+    const e = await semConfig.buscarPeriodo().catch((x) => x);
+    expect(e.message).toBe('O sistema está temporariamente indisponível. Tente novamente mais tarde.');
+    expect(e.message).not.toMatch(/VITE_|\.env|npm/);
+    expect(JSON.stringify(log.mock.calls)).toContain('VITE_API_URL');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('POST /predict: só modo e horário no corpo, Idempotency-Key no cabeçalho; 201 = criada', async () => {
@@ -78,7 +116,8 @@ describe('previsaoApi (contrato v6)', () => {
   it('POST /predict: 409 IDEMPOTENCY_CONFLICT preserva o código', async () => {
     fetchMock.mockReturnValue(resposta(409, { error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Chave já usada.' } }));
     const e = await api.gerarPrevisao(api.corpoPrevisao(PREVISAO.reference_time), PREVISAO.request_id).catch((x) => x);
-    expect(e).toMatchObject({ status: 409, code: 'IDEMPOTENCY_CONFLICT' });
+    expect(e).toMatchObject({ status: 409, code: 'IDEMPOTENCY_CONFLICT', detalhe: 'Chave já usada.' });
+    expect(e.message).not.toMatch(/chave/i);
   });
 
   it('falha de rede é "incerta" (pode ter gravado) e não repete sozinho', async () => {
@@ -90,7 +129,10 @@ describe('previsaoApi (contrato v6)', () => {
 
   it('probabilidade fora de 0–1 não vira previsão', async () => {
     fetchMock.mockReturnValue(resposta(201, { ...PREVISAO, rain_probability: 72 }));
-    await expect(api.gerarPrevisao(api.corpoPrevisao(PREVISAO.reference_time), PREVISAO.request_id)).rejects.toThrow(/escala/);
+    const e = await api.gerarPrevisao(api.corpoPrevisao(PREVISAO.reference_time), PREVISAO.request_id).catch((x) => x);
+    expect(e).toBeInstanceOf(api.ApiError);
+    expect(e.detalhe).toMatch(/escala/); // motivo técnico preservado
+    expect(e.message).toBe('O serviço enviou uma resposta que não conseguimos ler. Tente novamente.');
   });
 
   it('histórico: intervalo e cursor na query; devolve itens e próximo cursor', async () => {

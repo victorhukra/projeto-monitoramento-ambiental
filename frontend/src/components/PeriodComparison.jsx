@@ -1,14 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getDayHours, getMonthHours, getMonthsWithData, getYearsWithData } from '../services/forecastRepo.js';
+import { ComparisonBars } from './Charts.jsx';
+import { AvisoDeFalha } from './Panels.jsx';
+import { mensagemParaUsuario } from '../lib/mensagensErro.js';
+import { fmtDataIso, hojeEmLondrina } from '../lib/format.js';
 
 const periodValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const daysInMonth = (year, month) => new Date(year, month, 0).getDate();
-const today = new Date();
-const currentDate = periodValue(today);
-const currentYear = today.getFullYear();
+// "Hoje" no horário de Londrina, calculado na hora do uso (uma página aberta na virada do dia não fica com a data velha).
+const hoje = () => hojeEmLondrina().split('-').map(Number); // [ano, mês, dia]
 const FIRST_DATA_YEAR = 2020;
-const availableDays = (year, month) => year === currentYear && month === today.getMonth() + 1 ? today.getDate() : daysInMonth(year, month);
-const previousYear = periodValue(new Date(currentYear - 1, today.getMonth(), Math.min(today.getDate(), daysInMonth(currentYear - 1, today.getMonth() + 1))));
+const availableDays = (year, month) => {
+  const [ano, mes, dia] = hoje();
+  return year === ano && month === mes ? dia : daysInMonth(year, month);
+};
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
@@ -30,40 +35,42 @@ function periodLabel(value) {
   return new Date(year, month - 1, day).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// Diferença do dia 2 em relação ao dia 1, em frase (arredondada a 1 casa, como os valores exibidos).
+function comparacao(valor1, valor2, { semDados, igual, diferente }) {
+  if (valor1 == null || valor2 == null) return semDados;
+  const diferenca = Math.round((valor2 - valor1) * 10) / 10;
+  return diferenca === 0 ? igual : diferente(number.format(Math.abs(diferenca)), diferenca > 0);
+}
+
 function metric(value, unit) {
   return value == null ? 'Sem dados' : `${number.format(value)} ${unit}`;
 }
 
-function MetricBars({ title, values, unit }) {
-  const maximum = Math.max(1, ...values.map(({ value }) => value ?? 0));
-
+// Cartão com o gráfico de uma medida nos dois dias, no mesmo padrão dos gráficos por hora (Charts.jsx).
+function ComparisonCard({ title, unit, periods, values }) {
+  const itens = values.map((value, index) => ({ label: `Dia ${index + 1} · ${fmtDataIso(periods[index])}`, value }));
+  const descricao = `${title}: ${itens.map(({ label, value }) => `${label}, ${metric(value, unit)}`).join('; ')}`;
   return (
-    <div className="period-chart" role="img" aria-label={`${title}: ${values.map(({ label, value }) => `${label}, ${metric(value, unit)}`).join('; ')}`}>
-      <h3>{title}</h3>
-      <div className="period-chart-bars" aria-hidden="true">
-        {values.map(({ label, value }, index) => (
-          <div className="period-chart-column" key={`${label}-${index}`}>
-            <strong>{metric(value, unit)}</strong>
-            <div className="period-chart-track">
-              {value != null && <div className={`period-chart-bar period-chart-bar-${index}`} style={{ height: `${value === 0 ? 0 : Math.max(4, (value / maximum) * 100)}%` }} />}
-            </div>
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
+    <div className="card">
+      <h3>{title} ({unit})</h3>
+      <p className="note">Barras a partir do zero · dia 2 em destaque</p>
+      <ComparisonBars values={itens} formatar={(value) => metric(value, unit)} label={descricao} />
     </div>
   );
 }
 
 function initialPeriods(latestDate) {
-  if (!latestDate) return [previousYear, currentDate];
+  const [ano, mes, dia] = hoje();
+  const padrao = [periodValue(new Date(ano - 1, mes - 1, Math.min(dia, daysInMonth(ano - 1, mes)))), hojeEmLondrina()];
+  if (!latestDate) return padrao;
   const [year, month, day] = latestDate.slice(0, 10).split('-').map(Number);
-  if (!year || !month || !day) return [previousYear, currentDate];
+  if (!year || !month || !day) return padrao;
   const earlierDay = Math.min(day, daysInMonth(year - 1, month));
   return [periodValue(new Date(year - 1, month - 1, earlierDay)), latestDate.slice(0, 10)];
 }
 
-export default function PeriodComparison({ latestDate }) {
+// atualizacao / avisoNoTopo: "Tentar novamente" do topo da página e aviso geral já exibido (ver AvisoDeFalha).
+export default function PeriodComparison({ latestDate, atualizacao = 0, avisoNoTopo = false }) {
   const [periods, setPeriods] = useState(() => initialPeriods(latestDate));
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -77,6 +84,10 @@ export default function PeriodComparison({ latestDate }) {
   const [checkingYears, setCheckingYears] = useState(true);
   const [monthsWithData, setMonthsWithData] = useState([[], []]);
   const [checkingMonths, setCheckingMonths] = useState([true, true]);
+  const [tentativa, setTentativa] = useState(0); // "Tentar novamente" refaz a cadeia anos → meses → dias
+  // Etapa da cadeia anos → meses → dias cuja consulta falhou (null = nenhuma). Interrompe as etapas seguintes e
+  // separa, nos campos, "falha na consulta" (Indisponível) de "consulta feita, sem dados" e de "carregando".
+  const [falhaEm, setFalhaEm] = useState(null);
 
   // Atualiza o estado do próprio componente apenas quando a referência muda.
   // Uma seleção já feita pelo usuário é preservada.
@@ -86,7 +97,7 @@ export default function PeriodComparison({ latestDate }) {
   }
   useEffect(() => {
     const controller = new AbortController();
-    getYearsWithData(controller.signal, FIRST_DATA_YEAR, currentYear).then((years) => {
+    getYearsWithData(controller.signal, FIRST_DATA_YEAR, hoje()[0]).then((years) => {
       if (controller.signal.aborted) return;
       setYearsWithData(years);
       setPeriods((current) => current.map((value) => {
@@ -99,17 +110,41 @@ export default function PeriodComparison({ latestDate }) {
       }));
       setAvailabilityError(null);
     }).catch((cause) => {
-      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar os anos disponíveis.');
+      if (controller.signal.aborted) return;
+      setAvailabilityError(mensagemParaUsuario(cause));
+      setFalhaEm('anos');
+      setCheckingMonths([false, false]);
+      setCheckingDates([false, false]);
     }).finally(() => {
       if (!controller.signal.aborted) setCheckingYears(false);
     });
     return () => controller.abort();
-  }, []);
+  }, [tentativa]);
+
+  // "Tentar novamente" do topo da página: se a verificação das datas tinha falhado, recomeça (ajuste de estado
+  // durante a renderização, o mesmo padrão de latestDate acima, sem efeito extra).
+  const [atualizacaoVista, setAtualizacaoVista] = useState(atualizacao);
+  if (atualizacao !== atualizacaoVista) {
+    setAtualizacaoVista(atualizacao);
+    if (falhaEm) tentarDeNovo();
+  }
+
+  // Recomeça a verificação das datas disponíveis: os efeitos de meses e de dias rodam de novo em seguida.
+  function tentarDeNovo() {
+    setAvailabilityError(null);
+    setFalhaEm(null);
+    setCheckingYears(true);
+    setCheckingMonths([true, true]);
+    setCheckingDates([true, true]);
+    setTentativa((t) => t + 1);
+  }
 
   const year1 = Number(periods[0].slice(0, 4));
   const year2 = Number(periods[1].slice(0, 4));
   useEffect(() => {
-    if (checkingYears) return undefined;
+    // Depois de uma falha (de anos ou destes meses) só consulta de novo quando o usuário pede: "Tentar novamente"
+    // ou trocar o ano zeram falhaEm.
+    if (checkingYears || falhaEm === 'anos' || falhaEm === 'meses') return undefined;
     const controller = new AbortController();
     const years = [year1, year2];
     Promise.all(years.map((year) => getMonthsWithData(controller.signal, year))).then((available) => {
@@ -124,17 +159,20 @@ export default function PeriodComparison({ latestDate }) {
       }));
       setAvailabilityError(null);
     }).catch((cause) => {
-      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar os meses disponíveis.');
+      if (controller.signal.aborted) return;
+      setAvailabilityError(mensagemParaUsuario(cause));
+      setFalhaEm('meses');
+      setCheckingDates([false, false]);
     }).finally(() => {
       if (!controller.signal.aborted) setCheckingMonths([false, false]);
     });
     return () => controller.abort();
-  }, [checkingYears, year1, year2]);
+  }, [checkingYears, year1, year2, falhaEm]);
   const monthKey1 = periods[0].slice(0, 7);
   const monthKey2 = periods[1].slice(0, 7);
 
   useEffect(() => {
-    if (checkingYears || checkingMonths.some(Boolean)) return undefined;
+    if (checkingYears || checkingMonths.some(Boolean) || falhaEm) return undefined;
     const controller = new AbortController();
     const monthKeys = [monthKey1, monthKey2];
 
@@ -158,16 +196,25 @@ export default function PeriodComparison({ latestDate }) {
       }));
       setAvailabilityError(null);
     }).catch((cause) => {
-      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar as datas disponíveis.');
+      if (controller.signal.aborted) return;
+      setAvailabilityError(mensagemParaUsuario(cause));
+      setFalhaEm('dias');
     }).finally(() => {
       if (!controller.signal.aborted) setCheckingDates([false, false]);
     });
 
     return () => controller.abort();
-  }, [monthKey1, monthKey2, checkingYears, checkingMonths, monthsWithData]);
+  }, [monthKey1, monthKey2, checkingYears, checkingMonths, monthsWithData, falhaEm]);
+
+  // Consulta da comparação: uma nova comparação ou a saída da tela cancelam a anterior,
+  // para nenhuma resposta atrasada sobrescrever o resultado atual.
+  const comparacaoEmAndamento = useRef(null);
+  useEffect(() => () => comparacaoEmAndamento.current?.abort(), []);
 
   async function compare(event) {
     event.preventDefault();
+    comparacaoEmAndamento.current?.abort();
+    const controller = (comparacaoEmAndamento.current = new AbortController());
     setLoading(true);
     setError(null);
     setResult(null);
@@ -175,22 +222,21 @@ export default function PeriodComparison({ latestDate }) {
     try {
       const summaries = await Promise.all(periods.map(async (period) => {
         const [year, month, day] = period.split('-').map(Number);
-        return summarize(await getDayHours(undefined, year, month, day));
+        return summarize(await getDayHours(controller.signal, year, month, day));
       }));
-      setResult(summaries);
+      if (!controller.signal.aborted) setResult({ periods: [...periods], summaries }); // as datas comparadas, não as do formulário
     } catch (cause) {
-      setError(cause.message || 'Não foi possível carregar os períodos.');
+      if (!controller.signal.aborted) setError(mensagemParaUsuario(cause));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
-  const delta = (a, b, unit) => a == null || b == null ? 'Sem dados para comparar' : `${number.format(b - a)} ${unit}`;
   const comparisonDisabled = loading || checkingYears || checkingMonths.some(Boolean) || checkingDates.some(Boolean) || datesWithData.some((days) => !days.length);
 
   return (
     <section className="period-compare" aria-labelledby="t-comparar-periodos">
-      <h2 id="t-comparar-periodos">Comparar períodos</h2>
+      <h2 id="t-comparar-periodos">Comparar dois dias</h2>
       <p className="note">Compare a chuva acumulada e a temperatura média de dois dias.</p>
       <form className="period-form" onSubmit={compare}>
         {periods.map((period, index) => {
@@ -199,6 +245,7 @@ export default function PeriodComparison({ latestDate }) {
             setUserSelectedDate(true);
             const validDay = Math.min(nextDay, availableDays(nextYear, nextMonth));
             setPeriods((current) => current.map((value, i) => i === index ? periodValue(new Date(nextYear, nextMonth - 1, validDay)) : value));
+            if (reloadMonths || reloadDates) setFalhaEm(null);
             if (reloadMonths) {
               setCheckingMonths((current) => current.map((value, i) => i === index ? true : value));
               setMonthsWithData((current) => current.map((value, i) => i === index ? [] : value));
@@ -208,6 +255,7 @@ export default function PeriodComparison({ latestDate }) {
             } else if (reloadDates) {
               setCheckingDates((current) => current.map((value, i) => i === index ? true : value));
               setDatesWithData((current) => current.map((value, i) => i === index ? [] : value));
+              setAvailabilityError(null);
             }
             setResult(null);
             setError(null);
@@ -215,30 +263,33 @@ export default function PeriodComparison({ latestDate }) {
 
           return (
             <div className="period-selection" key={index}>
-              <strong>Período {index + 1}</strong>
+              <strong>Dia {index + 1}</strong>
               <div className="period-fields">
                 <div className="campo">
-                  <label htmlFor={`period-day-${index}`}>Dia</label>
-                  <select id={`period-day-${index}`} value={datesWithData[index].includes(day) ? day : ''} disabled={loading || checkingDates[index] || !datesWithData[index].length} onChange={(event) => updatePeriod(year, month, Number(event.target.value))}>
-                    {checkingDates[index] && <option value="">Buscando datas…</option>}
-                    {!checkingDates[index] && !datesWithData[index].length && <option value="">Sem datas com dados</option>}
-                    {datesWithData[index].map((optionDay) => <option key={optionDay} value={optionDay}>{optionDay}</option>)}
+                  <label htmlFor={`period-year-${index}`}>Ano</label>
+                  <select id={`period-year-${index}`} value={yearsWithData.includes(year) ? year : ''} disabled={loading || checkingYears || !yearsWithData.length} onChange={(event) => updatePeriod(Number(event.target.value), month, day, true, true)}>
+                    {checkingYears && <option value="">Buscando anos…</option>}
+                    {!checkingYears && falhaEm === 'anos' && !yearsWithData.length && <option value="">Indisponível</option>}
+                    {!checkingYears && !falhaEm && !yearsWithData.length && <option value="">Sem anos com dados</option>}
+                    {yearsWithData.map((availableYear) => <option key={availableYear} value={availableYear}>{availableYear}</option>)}
                   </select>
                 </div>
                 <div className="campo">
                   <label htmlFor={`period-month-${index}`}>Mês</label>
                   <select id={`period-month-${index}`} value={monthsWithData[index].includes(month) ? month : ''} disabled={loading || checkingYears || checkingMonths[index] || !monthsWithData[index].length} onChange={(event) => updatePeriod(year, Number(event.target.value), day, true)}>
                     {checkingMonths[index] && <option value="">Buscando meses…</option>}
-                    {!checkingMonths[index] && !monthsWithData[index].length && <option value="">Sem meses com dados</option>}
+                    {!checkingMonths[index] && (falhaEm === 'anos' || falhaEm === 'meses') && !monthsWithData[index].length && <option value="">Indisponível</option>}
+                    {!checkingMonths[index] && !falhaEm && !monthsWithData[index].length && <option value="">Sem meses com dados</option>}
                     {monthsWithData[index].map((availableMonth) => <option key={availableMonth} value={availableMonth}>{MONTHS[availableMonth - 1]}</option>)}
                   </select>
                 </div>
                 <div className="campo">
-                  <label htmlFor={`period-year-${index}`}>Ano</label>
-                  <select id={`period-year-${index}`} value={yearsWithData.includes(year) ? year : ''} disabled={loading || checkingYears || !yearsWithData.length} onChange={(event) => updatePeriod(Number(event.target.value), month, day, true, true)}>
-                    {checkingYears && <option value="">Buscando anos…</option>}
-                    {!checkingYears && !yearsWithData.length && <option value="">Sem anos com dados</option>}
-                    {yearsWithData.map((availableYear) => <option key={availableYear} value={availableYear}>{availableYear}</option>)}
+                  <label htmlFor={`period-day-${index}`}>Dia</label>
+                  <select id={`period-day-${index}`} value={datesWithData[index].includes(day) ? day : ''} disabled={loading || checkingDates[index] || !datesWithData[index].length} onChange={(event) => updatePeriod(year, month, Number(event.target.value))}>
+                    {checkingDates[index] && <option value="">Buscando datas…</option>}
+                    {!checkingDates[index] && falhaEm && !datesWithData[index].length && <option value="">Indisponível</option>}
+                    {!checkingDates[index] && !falhaEm && !datesWithData[index].length && <option value="">Sem datas com dados</option>}
+                    {datesWithData[index].map((optionDay) => <option key={optionDay} value={optionDay}>{optionDay}</option>)}
                   </select>
                 </div>
               </div>
@@ -248,34 +299,40 @@ export default function PeriodComparison({ latestDate }) {
         <button className="btn" type="submit" disabled={comparisonDisabled}>{loading ? 'Carregando…' : 'Comparar'}</button>
       </form>
 
-      {availabilityError && <p className="err" role="alert">{availabilityError}</p>}
-      {error && <p className="err" role="alert">{error}</p>}
+      {availabilityError && (
+        <AvisoDeFalha avisoNoTopo={avisoNoTopo} onTentar={tentarDeNovo}>Não foi possível consultar as datas disponíveis. {availabilityError}</AvisoDeFalha>
+      )}
+      {error && <p className="err" role="alert">Não foi possível comparar os dias. {error}</p>}
+      {/* região sempre montada: o leitor de tela anuncia o resultado quando ele aparece */}
+      <div aria-live="polite">
       {result && (
-        <div className="period-results" aria-live="polite">
-          {result.map((summary, index) => (
-            <div className="period-result" key={`${periods[index]}-${index}`}>
-              <h4>{periodLabel(periods[index])}</h4>
+        <div className="period-results">
+          {result.summaries.map((summary, index) => (
+            <div className="period-result" key={`${result.periods[index]}-${index}`}>
+              <h3>Dia {index + 1}: {periodLabel(result.periods[index])}</h3>
               <p>Chuva acumulada: <strong>{metric(summary.rain, 'mm')}</strong></p>
               <p>Temperatura média: <strong>{metric(summary.temperature, '°C')}</strong></p>
             </div>
           ))}
           <div className="period-charts">
-            <MetricBars
-              title="Chuva acumulada"
-              unit="mm"
-              values={result.map((summary, index) => ({ label: periodLabel(periods[index]), value: summary.rain }))}
-            />
-            <MetricBars
-              title="Temperatura média"
-              unit="°C"
-              values={result.map((summary, index) => ({ label: periodLabel(periods[index]), value: summary.temperature }))}
-            />
+            <ComparisonCard title="Chuva acumulada" unit="mm" periods={result.periods} values={result.summaries.map((summary) => summary.rain)} />
+            <ComparisonCard title="Temperatura média" unit="°C" periods={result.periods} values={result.summaries.map((summary) => summary.temperature)} />
           </div>
           <p className="period-difference">
-            Diferença (período 2 − período 1): chuva {delta(result[0].rain, result[1].rain, 'mm')} · temperatura {delta(result[0].temperature, result[1].temperature, '°C')}
+            {comparacao(result.summaries[0].rain, result.summaries[1].rain, {
+              semDados: 'Sem dados suficientes para comparar a chuva.',
+              igual: 'Choveu a mesma quantidade nos dois dias.',
+              diferente: (valor, maior) => `No dia 2 choveu ${valor} mm a ${maior ? 'mais' : 'menos'} que no dia 1.`,
+            })}{' '}
+            {comparacao(result.summaries[0].temperature, result.summaries[1].temperature, {
+              semDados: 'Sem dados suficientes para comparar a temperatura.',
+              igual: 'A temperatura média foi a mesma nos dois dias.',
+              diferente: (valor, maior) => `A temperatura média do dia 2 foi ${valor} °C ${maior ? 'maior' : 'menor'} que a do dia 1.`,
+            })}
           </p>
         </div>
       )}
+      </div>
     </section>
   );
 }

@@ -1,12 +1,14 @@
 // Consultas da Seção 1 de consultas_oficiais.sql (equipe do banco), traduzidas para PostgREST.
 // Só leitura. Cada função devolve as linhas cruas (aliases do SQL) ou lança erro.
 import { supabase } from '../lib/supabase.js';
+import { erroDeConsulta } from '../lib/mensagensErro.js';
 
 const TABLE = 'dataset_weather_goes';
 
+// Erro do Supabase: o detalhe técnico vai para o console e a tela recebe um texto amigável (lib/mensagensErro.js).
 const run = async (query) => {
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  const { data, error, status } = await query;
+  if (error) throw erroDeConsulta(error, status);
   return data;
 };
 
@@ -43,16 +45,7 @@ export const getYearsWithData = async (signal, firstYear, lastYear) => {
 export const getCurrent = (signal) =>
   run(supabase.from('clima_atual').select('*').abortSignal(signal).maybeSingle());
 
-// 1.2: últimos 24 registros, do mais recente para o mais antigo.
-// Inclui o vento (wind_speed_10m, coluna da 1.1) para a máxima das últimas 24 h no card de vento.
-export const getLast24h = (signal) =>
-  run(supabase.from(TABLE)
-    .select('horario:time, temperatura_c:temperature_2m, chuva_mm:precipitation, vento_ms:wind_speed_10m')
-    .order('time', { ascending: false })
-    .limit(24)
-    .abortSignal(signal));
-
-// Últimos 7 dias: mesmas colunas da 1.2, com registros suficientes para 7 dias completos de hora em hora
+// Últimos 7 dias: horário, temperatura e chuva, com registros suficientes para 7 dias completos de hora em hora
 // (7 × 24 + 23, para o caso de o último dia ainda estar pela metade). O agrupamento por dia é feito no frontend.
 export const getLastDays = (signal) =>
   run(supabase.from(TABLE)
@@ -116,6 +109,19 @@ export const getMonthDetail = (signal, year, month) => {
     .abortSignal(signal));
 };
 
+// Registros horários de um dia ("AAAA-MM-DD", horário de Londrina) com as medidas do resumo do dia:
+// chuva, temperatura, umidade e vento. 24 linhas por dia (limite com folga).
+export const getDayDetail = (signal, date) => {
+  const next = new Date(Date.parse(`${date}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  return run(supabase.from(TABLE)
+    .select('horario:time, chuva_mm:precipitation, temperatura_c:temperature_2m, umidade_pct:relative_humidity_2m, vento_ms:wind_speed_10m')
+    .gte('time', `${date}T00:00:00`)
+    .lt('time', `${next}T00:00:00`)
+    .order('time', { ascending: true })
+    .limit(30)
+    .abortSignal(signal));
+};
+
 // Registros horários de um dia, usados para comparar datas específicas.
 export const getDayHours = (signal, year, month, day) => {
   const start = new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
@@ -127,12 +133,3 @@ export const getDayHours = (signal, year, month, day) => {
     .limit(25)
     .abortSignal(signal));
 };
-
-// 1.3: últimos 15 registros com chuva > 0
-export const getRainEvents = (signal) =>
-  run(supabase.from(TABLE)
-    .select('data_hora:time, temperatura_c:temperature_2m, chuva_mm:precipitation, nuvens_pct:cloud_cover')
-    .gt('precipitation', 0)
-    .order('time', { ascending: false })
-    .limit(15)
-    .abortSignal(signal));

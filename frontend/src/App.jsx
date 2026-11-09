@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { getForecast } from './services/weatherApi.js';
-import { RainBars, TempLine } from './components/Charts.jsx';
-import { Indicators, Rain24h, Empty } from './components/Panels.jsx';
+import { Empty, ErroComNovaTentativa } from './components/Panels.jsx';
+import DiaPorData from './components/DiaPorData.jsx';
 import MesPorData from './components/MesPorData.jsx';
 import SemanaPorData from './components/SemanaPorData.jsx';
 import HistoricoBusca from './components/HistoricoBusca.jsx';
@@ -9,11 +9,12 @@ import PrevisaoExperimental from './components/PrevisaoExperimental.jsx';
 import StatusBackend from './components/StatusBackend.jsx';
 import PeriodComparison from './components/PeriodComparison.jsx';
 import { fmtDateTime, fmtFullDateTime } from './lib/format.js';
+import { mensagemParaUsuario } from './lib/mensagensErro.js';
 
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
 const CityMap = lazy(() => import('./components/CityMap.jsx'));
 
-const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Dados'], ['integracao', 'Previsão']];
+const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Histórico'], ['integracao', 'Previsão']];
 
 // Duas rotas sem roteador: "/" é o painel (Mapa, Agora, Semana e Dados são seções dele) e "/integracao" é outra tela.
 const RAIZ = import.meta.env.BASE_URL;
@@ -26,6 +27,7 @@ export default function App() {
   const [tela, setTela] = useState(telaDaUrl);
   const [alvo, setAlvo] = useState(null); // seção para rolar depois da troca de tela
   const [historicoVersao, setHistoricoVersao] = useState(0); // muda a cada previsão salva → histórico recarrega
+  const [tentativa, setTentativa] = useState(0); // "Tentar novamente": refaz a consulta do painel
   const historicoRef = useRef(null);
   const irParaHistorico = () => { historicoRef.current?.scrollIntoView(); historicoRef.current?.focus({ preventScroll: true }); };
 
@@ -36,11 +38,22 @@ export default function App() {
   }, []);
 
   // A seção só existe depois que o painel aparece, por isso a rolagem fica num efeito.
+  // O foco vai para o título da tela nova (o leitor de tela anuncia a troca) quando a tela muda;
+  // dentro do painel, só rola até a seção.
+  const tituloRef = useRef(null);
+  const telaAnterior = useRef(tela);
   useEffect(() => {
     if (!alvo) return;
+    const trocouDeTela = telaAnterior.current !== tela;
+    telaAnterior.current = tela;
     if (alvo.id === 'integracao') window.scrollTo(0, 0);
     else document.getElementById(alvo.id)?.scrollIntoView();
-  }, [alvo]);
+    if (trocouDeTela) tituloRef.current?.focus({ preventScroll: true });
+  }, [alvo, tela]);
+
+  useEffect(() => {
+    document.title = tela === 'integracao' ? 'Previsão de chuva — Chuva Londrina' : 'Chuva Londrina — Monitoramento de chuva';
+  }, [tela]);
 
   function irPara(e, id) {
     e.preventDefault();
@@ -51,17 +64,35 @@ export default function App() {
     setAlvo({ id });
   }
 
+  // Resultados com erro não ficam no cache de weatherApi.js, então uma nova tentativa consulta o banco de novo.
   useEffect(() => {
     const ctrl = new AbortController();
     getForecast({ signal: ctrl.signal })
       .then((data) => setState({ loading: false, data, error: null }))
-      .catch((e) => e.name !== 'AbortError' && setState((s) => ({ ...s, loading: false, error: e.message })));
+      .catch((e) => e.name !== 'AbortError' && setState((s) => ({ ...s, loading: false, error: mensagemParaUsuario(e) })));
     return () => ctrl.abort();
-  }, []);
+  }, [tentativa]);
+
+  function tentarDeNovo() {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    setTentativa((t) => t + 1);
+  }
 
   const { data, loading, error } = state;
   const meta = data?.meta;
   const errs = meta?.errors ?? {}; // erro por consulta (allSettled)
+  const carregando = loading && !data; // primeira carga: os blocos mostram "Carregando…", não "sem registros"
+  // Um único aviso para as falhas do painel (os blocos afetados mostram só "Dados indisponíveis no momento").
+  // Só as consultas que alimentam blocos desta tela: "current" (data da atualização), "days" (últimos 7 dias) e
+  // "station" (mapa). O resumo do dia (DiaPorData) faz as próprias consultas e mostra os próprios avisos.
+  const falhas = ['current', 'days', 'station'].map((k) => errs[k]).filter(Boolean);
+  const falhaTotal = error ?? meta?.dbError ?? null; // nenhuma consulta funcionou
+  let aviso = null;
+  if (falhaTotal) aviso = `Não foi possível carregar os dados. ${falhaTotal}`;
+  else if (falhas.length) aviso = `Parte dos dados não pôde ser carregada. ${falhas[0]}`;
+  // Com o aviso no topo (ou enquanto ele ainda pode aparecer, na carga), as seções não repetem o alerta:
+  // mostram só "Dados indisponíveis", e o "Tentar novamente" do topo refaz as consultas delas também.
+  const avisoNoTopo = Boolean(aviso) || loading;
 
   return (
     <>
@@ -82,56 +113,45 @@ export default function App() {
 
       {tela === 'integracao' ? (
       <main className="wrap">
-        <h1>Previsão de chuva</h1>
-        <p className="meta">Os dados desta tela vêm da API HTTP do backend, que consulta o banco e executa o modelo.</p>
+        <h1 ref={tituloRef} tabIndex={-1}>Previsão de chuva</h1>
+        <p className="meta">Escolha um dia e um horário do passado e veja se o sistema teria previsto chuva na hora seguinte.</p>
         <StatusBackend />
         <div className="pilha">
           <PrevisaoExperimental onPrevisaoSalva={() => setHistoricoVersao((v) => v + 1)} onConsultarHistorico={irParaHistorico} />
           <HistoricoBusca ref={historicoRef} atualizacao={historicoVersao} />
-          <p className="note">Simulações históricas demonstram o funcionamento do sistema. Exemplos escolhidos na tela, inclusive de períodos usados no treino, não são uma avaliação independente do modelo.</p>
+          <p className="note">Estas simulações usam dados do passado, inclusive de períodos que o sistema usou para aprender. Elas servem para demonstrar o funcionamento e não medem a precisão real das previsões.</p>
         </div>
       </main>
       ) : (
       <main className="wrap">
-        <h1>Onde vai chover em Londrina hoje?</h1>
+        <h1 ref={tituloRef} tabIndex={-1}>Chuva em Londrina: dados mais recentes</h1>
         <p className="meta">
-          {meta?.updatedAt ? `Último registro do banco: ${fmtDateTime(meta.updatedAt)}` : 'Horário do último registro indisponível'}
-          {loading && ' · atualizando…'}
+          {meta?.updatedAt ? `Dados atualizados até ${fmtDateTime(meta.updatedAt)}`
+            : carregando ? 'Carregando os dados mais recentes…' : 'Data da última atualização indisponível'}
+          {loading && !carregando && ' · atualizando…'}
         </p>
-        {meta?.dbError && <p className="err" role="alert">Não foi possível ler o banco: {meta.dbError}</p>}
-        {error && <p className="err" role="alert">Não foi possível carregar os dados: {error} Tente novamente em instantes.</p>}
+        {aviso && !loading && <ErroComNovaTentativa onTentar={tentarDeNovo}>{aviso}</ErroComNovaTentativa>}
 
         <section id="mapa" aria-labelledby="t-mapa">
-          <div className="map-grid">
-            <div className="card">
-              <h2 id="t-mapa">Mapa de Londrina</h2>
-              {errs.station && <p className="err" role="alert">Não foi possível ler o ponto de medição: {errs.station}</p>}
-              <Suspense fallback={<Empty>Carregando mapa…</Empty>}>
-                <CityMap station={data?.station} city={data?.city} at={meta?.updatedAt} />
-              </Suspense>
-            </div>
-            <Rain24h rain={data?.rain24h} error={errs.series} />
+          <div className="card">
+            <h2 id="t-mapa">Mapa de Londrina</h2>
+            <Suspense fallback={<Empty>Carregando mapa…</Empty>}>
+              <CityMap station={data?.station} city={data?.city} at={meta?.updatedAt} loading={carregando} />
+            </Suspense>
           </div>
         </section>
 
         <section id="agora" aria-labelledby="t-agora">
-          <h2 id="t-agora" className="sr">Agora</h2>
-          <Indicators city={data?.city} climate={data?.climate} rainPeak={data?.rainPeak} peakError={errs.series} at={meta?.updatedAt} error={errs.current} />
-          <div className="grid2">
-            <div className="card"><h3>Chuva nas últimas 24h (mm)</h3><p className="note">Registros observados · cidade toda · último registro em destaque</p>
-              {errs.series ? <p className="err" role="alert">Não foi possível ler o banco: {errs.series}</p> : <RainBars data={data?.hourly} />}</div>
-            <div className="card"><h3>Temperatura nas últimas 24h (°C)</h3><p className="note">Registros observados · cidade toda · último registro em destaque</p>
-              {errs.series ? <p className="err" role="alert">Não foi possível ler o banco: {errs.series}</p> : <TempLine data={data?.hourly} />}</div>
-          </div>
+          <DiaPorData atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
         </section>
 
         <section id="semana" aria-labelledby="t-semana">
-          <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} />
+          <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} carregandoRecentes={carregando} atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
         </section>
 
         <section id="dados" className="grid2">
-          <MesPorData />
-          <div className="card compare-card"><PeriodComparison latestDate={meta?.updatedAt} /></div>
+          <MesPorData atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
+          <div className="card compare-card"><PeriodComparison latestDate={meta?.updatedAt} atualizacao={tentativa} avisoNoTopo={avisoNoTopo} /></div>
         </section>
 
       </main>
@@ -141,7 +161,7 @@ export default function App() {
         {/* Fontes reunidas só aqui (no mapa fica apenas o crédito obrigatório do OpenStreetMap) */}
         <div className="sources">
           <span><b>Chuva Londrina</b> · protótipo acadêmico · UTFPR Londrina</span>
-          <span>Fonte dos dados: {meta?.source ?? 'não informada'} · Último dado recebido: {fmtFullDateTime(meta?.updatedAt) ?? 'indisponível'}</span>
+          <span>Fonte dos dados: {meta?.source ?? (carregando ? 'carregando…' : 'não informada')} · Último dado recebido: {fmtFullDateTime(meta?.updatedAt) ?? (carregando ? 'carregando…' : 'indisponível')}</span>
           <span>Limite municipal: IBGE (malha municipal 2022) · Mapa: © OpenStreetMap</span>
         </div>
         <a href={RAIZ} onClick={(e) => irPara(e, 'mapa')}>Voltar ao início</a>

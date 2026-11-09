@@ -1,8 +1,10 @@
 import base64
 import json
+import logging
 from datetime import datetime
 from uuid import UUID
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 from .errors import ServiceError
 from .model_service import ModelLoadError, load_model
 from .settings import Settings
@@ -11,6 +13,15 @@ from .weather_service import get_weather_inputs
 from .prediction_service import predict
 from .availability_service import available_period, available_times
 from src.models.weather_ensemble import MODEL_VERSION
+
+logger=logging.getLogger(__name__)
+# Respostas de erro HTTP padronizadas (mesmo envelope dos ServiceError), sem detalhes internos.
+HTTP_ERRORS={
+    400:('BAD_REQUEST','Não foi possível entender o pedido.'),
+    405:('METHOD_NOT_ALLOWED','Operação não permitida neste endereço.'),
+    413:('PAYLOAD_TOO_LARGE','O pedido enviado é grande demais.'),
+}
+INTERNAL_ERROR={'error':{'code':'INTERNAL_ERROR','message':'Ocorreu um erro inesperado. Tente novamente em alguns minutos.'}}
 
 def encode_cursor(row):
     raw=json.dumps([row['created_at'],row['prediction_id']],separators=(',',':')).encode()
@@ -31,11 +42,17 @@ def public_prediction(row):
     fields=('prediction_id','request_id','created_at','location','mode','is_mock','model_version','reference_time','previous_reference_time','forecast_start','forecast_end','temperature_2m','relative_humidity_2m','pressure_msl','cloud_cover','pressure_msl_previous_hour','rain_probability','rain_predicted','decision_threshold','input_source')
     return {field:row.get(field) for field in fields}
 def create_app(settings=None,repository=None,model=None):
+    # Sem configuração de log do servidor (ex.: flask run), usa a saída padrão com nível INFO.
+    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s: %(message)s')
     settings=settings or Settings.from_env(); app=Flask(__name__); app.config['MAX_CONTENT_LENGTH']=16*1024
     model_error=False
     if model is None and settings.model_path and settings.manifest_path:
         try:model=load_model(settings.model_path,settings.manifest_path)
-        except ModelLoadError:model_error=True
+        except ModelLoadError:
+            model_error=True
+            logger.exception('Falha ao carregar o modelo (MODEL_PATH=%s, MODEL_MANIFEST_PATH=%s)',settings.model_path,settings.manifest_path)
+    elif model is None:
+        logger.warning('Modelo não configurado: defina MODEL_PATH e MODEL_MANIFEST_PATH.')
     if repository is None and settings.supabase_url and settings.supabase_key:
         repository=WeatherRepository(settings.supabase_url,settings.supabase_key)
     app.extensions.update(weather_model=model,weather_repository=repository)
@@ -115,8 +132,22 @@ def create_app(settings=None,repository=None,model=None):
         more=len(rows)>limit;items=rows[:limit]
         return jsonify(items=[public_prediction(row) for row in items],next_cursor=encode_cursor(items[-1]) if more and items else None)
     @app.errorhandler(ServiceError)
-    def handle_service_error(error):body,status=error.response();return jsonify(body),status
+    def handle_service_error(error):
+        if error.status>=500:logger.warning('%s %s → %s %s: %s',request.method,request.path,error.status,error.code,error.message)
+        body,status=error.response();return jsonify(body),status
     @app.errorhandler(404)
     def not_found(_):return jsonify(error={'code':'NOT_FOUND','message':'Rota inexistente.'}),404
+    @app.errorhandler(HTTPException)
+    def handle_http_error(error):
+        # Demais erros HTTP do Flask/Werkzeug (405, 400, 413…): mesmo status, corpo JSON no envelope padrão.
+        status=error.code or 500
+        if status>=500:logger.error('%s %s → erro HTTP %s',request.method,request.path,status)
+        code,message=HTTP_ERRORS.get(status,('HTTP_ERROR','Não foi possível concluir o pedido.'))
+        return jsonify(error={'code':code,'message':message}),status
+    @app.errorhandler(Exception)
+    def handle_unexpected(error):
+        # Exceção não prevista: stack trace só no log; a resposta não traz detalhes internos.
+        logger.exception('Erro inesperado em %s %s',request.method,request.path)
+        return jsonify(INTERNAL_ERROR),500
     return app
 app=create_app()

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { Indicators, Rain24h, LastDays, MonthPanel } from './Panels.jsx';
+import { Indicators, LastDays, MonthPanel } from './Panels.jsx';
 
 describe('MonthPanel', () => {
   const month = { label: 'setembro de 2026', monthName: 'setembro', accumulatedMm: 262.5, historicalAvgMm: 74.1, fromYear: 2020, toYear: 2025, until: '2026-09-30T23:00:00-03:00', source: 'Banco do projeto (Supabase)' };
@@ -30,68 +30,75 @@ describe('LastDays', () => {
     expect(items[0].textContent).toContain('27° / 18°');
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
-  it('erro da consulta aparece no lugar do bloco', () => {
-    render(<LastDays days={[]} error="sem permissão" />);
-    expect(screen.getByRole('alert').textContent).toContain('sem permissão');
+  it('dia incompleto: informa quantas das 24 horas têm dados (não "20h", que parece horário)', () => {
+    render(<LastDays days={[{ ...days[0], hours: 20 }]} />);
+    expect(screen.getByRole('listitem').textContent).toContain('dados de 20 das 24 horas');
+    expect(screen.getByRole('listitem').textContent).not.toMatch(/\(20h\)/);
+  });
+  it('dia sem medições: "sem medições", nunca "0 mm" nem temperaturas', () => {
+    render(<LastDays days={[{ date: '2026-09-26', rainMm: null, tMin: null, tMax: null, hours: 0 }]} />);
+    const dia = screen.getByRole('listitem');
+    expect(dia.textContent).toContain('sem medições');
+    expect(dia.textContent).not.toMatch(/mm|°/);
+    expect(dia.className).toContain('vazio');
+  });
+  it('carregando: mostra "Carregando…", não "sem registros"', () => {
+    const { container } = render(<LastDays days={undefined} loading />);
+    expect(container.textContent).toBe('Carregando os últimos dias…');
+  });
+  it('erro da consulta: texto neutro no lugar do bloco, sem repetir o alerta (ele fica no topo do painel)', () => {
+    const { container } = render(<LastDays days={[]} error="sem permissão" />);
+    expect(container.textContent).toBe('Dados indisponíveis no momento.');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 
-describe('Indicators', () => {
-  const city = { rainMm: 0, windKmh: 8.5, windMaxKmh: 17.4, windMaxAt: '2026-09-30T12:00:00-03:00' };
-  const climate = { pct: 27, monthLabel: 'setembro', fromYear: 2020, toYear: 2025 };
-  it('é um grupo nomeado', () => {
-    render(<Indicators city={{ rainMm: 1 }} at="2026-09-30T23:00:00-03:00" />);
-    expect(screen.getByRole('group', { name: /^Indicadores do registro de/ })).toBeTruthy();
+describe('Indicators (resumo de um dia)', () => {
+  const dia = {
+    date: '2026-09-30', hours: 24, totalMm: 5.1,
+    rainPeak: { mm: 3.9, t: '2026-09-30T13:00:00-03:00' },
+    tempMax: { c: 26.6, t: '2026-09-30T11:00:00-03:00' }, tempMin: { c: 19.8, t: '2026-09-30T05:00:00-03:00' },
+    humidityAvg: 75.6, windAvgKmh: 8.5, windMax: { kmh: 17.4, t: '2026-09-30T12:00:00-03:00' },
+    climate: { pct: 27, monthLabel: 'setembro', fromYear: 2020, toYear: 2025 }, climateError: null,
+  };
+  const card = (nome) => screen.getByText(nome).closest('.kpi');
+  it('é um grupo nomeado com a data do dia', () => {
+    render(<Indicators dia={dia} />);
+    expect(screen.getByRole('group', { name: 'Indicadores de 30/09/2026' })).toBeTruthy();
   });
-  it('vento: descrição Beaufort e máxima das 24 h, sem demonstração', () => {
-    render(<Indicators city={city} climate={climate} />);
-    const vento = screen.getByText('Vento').closest('.kpi');
-    expect(vento.textContent).toContain('brisa leve · máx. 17 km/h às 12h (últimas 24h)');
-    expect(vento.textContent).not.toMatch(/demonstração/);
-    expect(vento.textContent).not.toMatch(/direção|rajada/);
+  it('temperatura máxima, com a mínima e a umidade média no complemento', () => {
+    render(<Indicators dia={dia} />);
+    expect(card('Temperatura máxima').querySelector('strong').textContent).toBe('27 °C');
+    expect(card('Temperatura máxima').textContent).toContain('mín. 20 °C · umidade média 76%');
   });
-  it('maior chuva das últimas 24 h no lugar de "Chuva no último registro"', () => {
-    render(<Indicators city={city} climate={climate} rainPeak={{ mm: 3.9, t: '2026-09-30T13:00:00-03:00' }} />);
-    const card = screen.getByText('Maior chuva nas últimas 24h').closest('.kpi');
-    expect(card.textContent).toContain('3,9 mm');
-    expect(card.textContent).toContain('em 1 hora, às 13h de qua., 30');
-    expect(screen.queryByText('Chuva no último registro')).toBeNull();
+  it('maior chuva em 1 hora, com o horário e o total do dia', () => {
+    render(<Indicators dia={dia} />);
+    expect(card('Maior chuva em 1 hora').textContent).toContain('3,9 mm');
+    expect(card('Maior chuva em 1 hora').textContent).toContain('às 13h · total do dia 5,1 mm');
   });
-  it('maior chuva: sem chuva nas 24 h e erro da consulta', () => {
-    const { rerender } = render(<Indicators city={city} climate={climate} rainPeak={{ mm: 0, t: null }} />);
-    expect(screen.getByText('Maior chuva nas últimas 24h').closest('.kpi').textContent).toContain('sem chuva nas últimas 24 horas');
-    rerender(<Indicators city={city} climate={climate} rainPeak={null} peakError="sem permissão" />);
-    expect(screen.getByText('Maior chuva nas últimas 24h').closest('.kpi').textContent).toContain('não foi possível ler o banco');
+  it('maior chuva: dia sem chuva e dia sem registros de chuva', () => {
+    const { rerender } = render(<Indicators dia={{ ...dia, rainPeak: { mm: 0, t: null }, totalMm: 0 }} />);
+    expect(card('Maior chuva em 1 hora').textContent).toContain('0 mmsem chuva no dia');
+    rerender(<Indicators dia={{ ...dia, rainPeak: null, totalMm: null }} />);
+    expect(card('Maior chuva em 1 hora').textContent).toContain('sem registros de chuva no dia');
   });
-  it('chance histórica no lugar da probabilidade, avisando que não é previsão', () => {
-    render(<Indicators city={city} climate={climate} />);
-    const card = screen.getByText('Chance histórica de chuva').closest('.kpi');
-    expect(card.textContent).toContain('27%');
-    expect(card.textContent).toContain('dias de setembro com chuva (2020–2025) · não é previsão');
-    expect(card.textContent).not.toMatch(/demonstração/);
-    expect(screen.queryByText('Probabilidade')).toBeNull();
+  it('vento médio: descrição Beaufort e máxima do dia, sem direção ou rajada', () => {
+    render(<Indicators dia={dia} />);
+    expect(card('Vento médio').querySelector('strong').textContent).toBe('9 km/h');
+    expect(card('Vento médio').textContent).toContain('brisa leve · máx. 17 km/h às 12h');
+    expect(card('Vento médio').textContent).not.toMatch(/direção|rajada|últimas 24h/);
   });
-});
-
-describe('Rain24h', () => {
-  const rain = { mm: 6.5, from: '2026-09-30T00:00:00-03:00', to: '2026-09-30T23:00:00-03:00' };
-  it('soma da chuva nas últimas 24h, com o período dos registros', () => {
-    const { container } = render(<Rain24h rain={rain} />);
-    expect(screen.getByRole('heading', { name: 'Chuva acumulada nas últimas 24h' })).toBeTruthy();
-    expect(container.querySelector('strong').textContent).toBe('6,5 mm');
-    expect(container.textContent).toContain('das 00h às 23h de qua., 30');
+  it('chance histórica avisa que não é previsão; um ano só aparece sem intervalo', () => {
+    const { rerender } = render(<Indicators dia={dia} />);
+    expect(card('Chance histórica de chuva').textContent).toContain('27%');
+    expect(card('Chance histórica de chuva').textContent).toContain('dias de setembro com chuva (2020–2025) · não é previsão');
+    rerender(<Indicators dia={{ ...dia, climate: { ...dia.climate, fromYear: 2024, toYear: 2024 } }} />);
+    expect(card('Chance histórica de chuva').textContent).toContain('(2024)');
   });
-  it('período que atravessa a meia-noite mostra os dois dias', () => {
-    const { container } = render(<Rain24h rain={{ mm: 1, from: '2026-09-29T14:00:00-03:00', to: '2026-09-30T13:00:00-03:00' }} />);
-    expect(container.textContent).toContain('das 14h de ter., 29 às 13h de qua., 30');
-  });
-  it('sem chuva no período', () => {
-    const { container } = render(<Rain24h rain={{ ...rain, mm: 0 }} />);
-    expect(container.querySelector('strong').textContent).toBe('0 mm');
-    expect(container.textContent).toContain('sem chuva no período');
-  });
-  it('erro da consulta aparece no lugar do valor', () => {
-    render(<Rain24h rain={null} error="sem permissão" />);
-    expect(screen.getByRole('alert').textContent).toContain('sem permissão');
+  it('chance histórica: sem histórico e falha na consulta', () => {
+    const { rerender } = render(<Indicators dia={{ ...dia, climate: null }} />);
+    expect(card('Chance histórica de chuva').textContent).toContain('sem histórico deste mês nos anos anteriores');
+    rerender(<Indicators dia={{ ...dia, climate: null, climateError: 'falhou' }} />);
+    expect(card('Chance histórica de chuva').textContent).toContain('dados indisponíveis no momento');
   });
 });

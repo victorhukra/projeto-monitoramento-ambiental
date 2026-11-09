@@ -1,35 +1,42 @@
 import { useEffect, useState } from 'react';
-import { backendConfigurado, verificarSaude } from '../services/previsaoApi.js';
+import { verificarSaude } from '../services/previsaoApi.js';
+import { mensagemParaUsuario, registrarErro } from '../lib/mensagensErro.js';
+import { ErroComNovaTentativa } from './Panels.jsx';
 
-// Linha de status do backend (GET /health): servidor no ar, modelo v6 carregado e banco configurado.
+// Disponibilidade do serviço de previsão (GET /health), em linguagem simples.
+// O detalhe técnico (modelo não carregado, banco não configurado, versão) fica só no console.
+// Sem VITE_API_URL, verificarSaude lança um erro amigável e deixa a instrução técnica no console.
 export default function StatusBackend() {
-  const [saude, setSaude] = useState(() => (backendConfigurado() ? { status: 'carregando' } : { status: 'sem-config' }));
+  const [saude, setSaude] = useState({ status: 'carregando' });
+  const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
-    if (!backendConfigurado()) return undefined;
     const ctrl = new AbortController();
     verificarSaude({ signal: ctrl.signal })
-      .then((corpo) => setSaude({ status: 'ok', corpo }))
-      .catch((e) => e?.name !== 'AbortError' && setSaude({ status: 'erro', mensagem: e.message }));
+      .then((corpo) => {
+        const problemas = [corpo.model_loaded === false && 'modelo não carregado', corpo.database_configured === false && 'banco não configurado'].filter(Boolean);
+        if (problemas.length) registrarErro('Serviço de previsão com problemas (GET /health)', { problemas, corpo });
+        setSaude({ status: problemas.length ? 'com-problemas' : 'ok' });
+      })
+      .catch((e) => e?.name !== 'AbortError' && setSaude({ status: 'erro', mensagem: mensagemParaUsuario(e) }));
     return () => ctrl.abort();
-  }, []);
+  }, [tentativa]);
 
-  if (saude.status === 'sem-config') {
-    return <p className="err" role="alert">Backend não configurado: preencha <code>VITE_API_URL</code> no arquivo <code>.env</code> (ex.: http://localhost:5000) e reinicie o <code>npm run dev</code>.</p>;
+  function tentarDeNovo() {
+    setSaude({ status: 'carregando' });
+    setTentativa((t) => t + 1);
   }
-  if (saude.status === 'carregando') return <p className="note status-backend">Verificando o backend…</p>;
-  if (saude.status === 'erro') return <p className="err status-backend" role="alert">Backend indisponível: {saude.mensagem}</p>;
 
-  const { model_loaded: modelo, database_configured: banco, model_version: versao } = saude.corpo;
-  const problemas = [modelo === false && 'o modelo não foi carregado', banco === false && 'o banco não está configurado'].filter(Boolean);
+  if (saude.status === 'carregando') return <p className="note status-backend">Verificando se o serviço de previsão está disponível…</p>;
+  if (saude.status === 'erro') {
+    return <ErroComNovaTentativa onTentar={tentarDeNovo}>O serviço de previsão não está disponível agora. {saude.mensagem}</ErroComNovaTentativa>;
+  }
+  if (saude.status === 'com-problemas') {
+    return <p className="err status-backend" role="alert">O serviço de previsão está com problemas e não consegue gerar previsões agora. Tente novamente mais tarde.</p>;
+  }
   return (
-    <div className="status-backend">
-      <p className="note">
-        <span className={`ponto ${problemas.length ? 'falha' : 'ok'}`} aria-hidden="true" /> Backend no ar
-        {modelo && versao && <> · modelo <code>{versao}</code></>}
-        {banco && ' · banco conectado'}
-      </p>
-      {problemas.length > 0 && <p className="err" role="alert">O backend respondeu, mas {problemas.join(' e ')}. As previsões não funcionarão até isso ser resolvido.</p>}
-    </div>
+    <p className="note status-backend">
+      <span className="ponto ok" aria-hidden="true" /> Serviço de previsão disponível
+    </p>
   );
 }

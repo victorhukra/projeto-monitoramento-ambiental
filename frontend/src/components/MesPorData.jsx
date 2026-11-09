@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { getDataPeriod, getMonthReport } from '../services/weatherApi.js';
 import { rankByRain } from '../lib/daily.js';
 import { celsius, fmtDataIso, fmtDay, mm, pct } from '../lib/format.js';
-import { Empty, MonthPanel } from './Panels.jsx';
+import { AvisoDeFalha, Empty, Indisponivel, MonthPanel } from './Panels.jsx';
+import { mensagemParaUsuario } from '../lib/mensagensErro.js';
 
 // "Histórico do mês" com escolha de mês/ano: acumulado x média histórica e os dias mais chuvosos do mês.
 // Limites (primeiro e último mês) vêm do banco; nada fixo no código. Começa no mês do último registro.
@@ -11,21 +12,25 @@ const NOMES = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(2000, i, 15
 const partes = (iso) => (iso ? { ano: Number(iso.slice(0, 4)), mes: Number(iso.slice(5, 7)) } : null);
 const chaveMes = (ano, mes) => ano * 100 + mes;
 
-export default function MesPorData() {
+// atualizacao / avisoNoTopo: "Tentar novamente" do topo da página e aviso geral já exibido (ver AvisoDeFalha).
+export default function MesPorData({ atualizacao = 0, avisoNoTopo = false }) {
   const [periodo, setPeriodo] = useState({ status: 'carregando' });
   const [sel, setSel] = useState(null); // { ano, mes } em edição
   const [rel, setRel] = useState({ status: 'ocioso' }); // relatório exibido: carregando | sucesso | erro
   const [todos, setTodos] = useState(false); // mostrar todos os dias do mês, não só os 10 mais chuvosos
   const pedido = useRef(null);
+  const mesEscolhido = useRef(null); // último mês pedido: uma nova tentativa refaz este mês
+  const [tentativa, setTentativa] = useState(0); // "Tentar novamente" na consulta do período
 
   function carregar(ano, mes) {
     pedido.current?.abort();
     const ctrl = (pedido.current = new AbortController());
+    mesEscolhido.current = { ano, mes };
     setTodos(false);
     setRel({ status: 'carregando', ano, mes });
     getMonthReport(ano, mes, { signal: ctrl.signal })
       .then((dados) => !ctrl.signal.aborted && setRel({ status: 'sucesso', ano, mes, dados }))
-      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setRel({ status: 'erro', ano, mes, mensagem: e.message }));
+      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setRel({ status: 'erro', ano, mes, mensagem: mensagemParaUsuario(e) }));
   }
   const carregarRef = useRef(carregar);
 
@@ -34,12 +39,17 @@ export default function MesPorData() {
     getDataPeriod({ signal: ctrl.signal })
       .then((p) => {
         setPeriodo({ status: 'sucesso', ...p });
-        const ultimo = partes(p.maxDate);
-        if (ultimo) { setSel(ultimo); carregarRef.current(ultimo.ano, ultimo.mes); }
+        const alvo = mesEscolhido.current ?? partes(p.maxDate); // primeira carga: o mês do último registro
+        if (alvo) { setSel(alvo); carregarRef.current(alvo.ano, alvo.mes); }
       })
-      .catch((e) => e?.name !== 'AbortError' && setPeriodo({ status: 'erro', mensagem: e.message }));
+      .catch((e) => e?.name !== 'AbortError' && setPeriodo({ status: 'erro', mensagem: mensagemParaUsuario(e) }));
     return () => { ctrl.abort(); pedido.current?.abort(); };
-  }, []);
+  }, [tentativa, atualizacao]);
+
+  function tentarPeriodoDeNovo() {
+    setPeriodo({ status: 'carregando' });
+    setTentativa((t) => t + 1);
+  }
 
   const min = partes(periodo.minDate), max = partes(periodo.maxDate);
   const anos = min && max ? Array.from({ length: max.ano - min.ano + 1 }, (_, i) => max.ano - i) : [];
@@ -64,8 +74,10 @@ export default function MesPorData() {
     <>
       <div className="card">
         <h2>Histórico do mês</h2>
-        {periodo.status === 'carregando' && <Empty>Consultando o período do banco…</Empty>}
-        {periodo.status === 'erro' && <p className="err" role="alert">Não foi possível consultar o período do banco: {periodo.mensagem}</p>}
+        {periodo.status === 'carregando' && <Empty>Carregando as datas disponíveis…</Empty>}
+        {periodo.status === 'erro' && (
+          <AvisoDeFalha avisoNoTopo={avisoNoTopo} onTentar={tentarPeriodoDeNovo}>Não foi possível consultar as datas disponíveis. {periodo.mensagem}</AvisoDeFalha>
+        )}
         {sel && min && max && (
           <form className="acoes mes-form" onSubmit={mostrar} aria-describedby="mes-limites" aria-label="Escolher mês do histórico">
             <div className="campo">
@@ -86,41 +98,43 @@ export default function MesPorData() {
         )}
 
         <div aria-live="polite">
-          {carregando && <Empty>Buscando {NOMES[rel.mes - 1]} de {rel.ano} no banco…</Empty>}
-          {rel.status === 'erro' && <p className="err" role="alert">Não foi possível ler o banco: {rel.mensagem}</p>}
-          {dados && dados.hours === 0 && <Empty>Não há registros de {dados.label} no banco.</Empty>}
+          {carregando && <Empty>Carregando {NOMES[rel.mes - 1]} de {rel.ano}…</Empty>}
+          {rel.status === 'erro' && (
+            <AvisoDeFalha avisoNoTopo={avisoNoTopo} onTentar={() => carregar(rel.ano, rel.mes)}>Não foi possível carregar estes dados. {rel.mensagem}</AvisoDeFalha>
+          )}
+          {dados && dados.hours === 0 && <Empty>Não temos dados de {dados.label}.</Empty>}
           {dados && dados.hours > 0 && (
             <>
               <MonthPanel month={dados} rotulo={ehUltimo ? 'Este mês' : `Acumulado em ${dados.label}`} />
               <p className="note">
                 {diasComChuva} {diasComChuva === 1 ? 'dia' : 'dias'} com chuva em {dados.days.length} {dados.days.length === 1 ? 'dia' : 'dias'} com registros
-                {incompleto ? ` · mês incompleto no banco (${dados.hours} de ${dados.expectedHours} horas)` : ''}.
+                {incompleto ? ` · mês com dados incompletos (${dados.hours} de ${dados.expectedHours} horas)` : ''}.
               </p>
             </>
           )}
         </div>
         <div className="about"><h3>Como lemos os dados</h3>
-          <p>Chuva somada a partir dos registros horários do banco (Supabase). A média histórica usa o mesmo mês dos até 10 anos anteriores que têm pelo menos 90% das horas registradas. Não é previsão.</p></div>
+          <p>Chuva somada a partir das medições feitas de hora em hora. A média histórica usa o mesmo mês dos até 10 anos anteriores que têm pelo menos 90% das horas registradas. Não é previsão.</p></div>
       </div>
 
       <section className="card" aria-labelledby="t-dias-chuvosos">
         <h2 id="t-dias-chuvosos">Dias mais chuvosos{dados ? ` de ${dados.label}` : ''}</h2>
         <p className="note">Ordenados pela chuva do dia · % do mês = parte do acumulado do mês que caiu no dia · cidade toda</p>
-        {carregando && <Empty>Buscando os dias do mês…</Empty>}
-        {rel.status === 'erro' && <p className="err" role="alert">Não foi possível ler o banco: {rel.mensagem}</p>}
+        {(carregando || periodo.status === 'carregando') && <Empty>Buscando os dias do mês…</Empty>}
+        {(rel.status === 'erro' || periodo.status === 'erro') && <Indisponivel />}
         {dados && !dados.days.length && <Empty>Sem registros neste mês.</Empty>}
         {dados && dados.days.length > 0 && (
           <>
             <div className="scroll">
               <table>
                 <thead>
-                  <tr><th>#</th><th>Dia</th><th>Chuva</th><th>% do mês</th><th>Horas com chuva</th><th>Temp. máx. / mín.</th><th>Umidade média</th><th>Nuvens média</th></tr>
+                  <tr><th>#</th><th>Dia</th><th>Chuva</th><th>% do mês</th><th>Horas com chuva</th><th>Temp. máx. / mín.</th><th>Umidade média</th><th>Nebulosidade média</th></tr>
                 </thead>
                 <tbody>
                   {lista.map((d, i) => (
                     <tr key={d.date} className={d.rainMm > 0 ? undefined : 'seco'}>
                       <td>{i + 1}</td>
-                      <td>{fmtDay(d.date)}{d.hours < 24 && <small className="parcial"> · {d.hours}h</small>}</td>
+                      <td>{fmtDay(d.date)}{d.hours < 24 && <small className="parcial"> · dados de {d.hours} das 24 horas</small>}</td>
                       <td><strong>{mm(d.rainMm)}</strong></td>
                       <td>{d.pctMes == null ? '—' : <span className="pct-mes"><i style={{ width: `${Math.min(100, d.pctMes)}%` }} />{pct(d.pctMes)}</span>}</td>
                       <td>{d.rainyHours}</td>

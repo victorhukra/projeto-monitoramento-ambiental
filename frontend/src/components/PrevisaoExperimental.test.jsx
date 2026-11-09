@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ErroAmigavel } from '../lib/mensagensErro.js';
 
 const T14 = '2026-09-01T14:00:00-03:00';
 const T15 = '2026-09-01T15:00:00-03:00';
@@ -20,7 +21,8 @@ vi.mock('../services/previsaoApi.js', () => ({
 }));
 const { default: PrevisaoExperimental } = await import('./PrevisaoExperimental.jsx');
 
-class ErroIncerto extends Error { incerto = true; }
+// Erros como services/previsaoApi.js os entrega: texto amigável + status/code/incerto preservados.
+class ErroIncerto extends ErroAmigavel { incerto = true; }
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -34,7 +36,7 @@ const gerarBtn = () => screen.getByRole('button', { name: /Gerar (nova )?previs�
 async function buscarDados() {
   await screen.findByRole('option', { name: '14:00' });
   fireEvent.click(screen.getByRole('button', { name: 'Buscar dados' }));
-  await screen.findByText('Dados encontrados (somente leitura)');
+  await screen.findByText('Medições deste horário');
 }
 
 describe('Previsão experimental', () => {
@@ -61,7 +63,7 @@ describe('Previsão experimental', () => {
     render(<PrevisaoExperimental />);
     await buscarDados();
     fireEvent.change(screen.getByLabelText('Hora'), { target: { value: T15 } });
-    expect(screen.queryByText('Dados encontrados (somente leitura)')).toBeNull();
+    expect(screen.queryByText('Medições deste horário')).toBeNull();
     expect(gerarBtn().disabled).toBe(true);
   });
 
@@ -83,16 +85,16 @@ describe('Previsão experimental', () => {
   });
 
   it('falha de rede: não mostra previsão, guarda o pedido e "Tentar novamente" reusa a MESMA chave', async () => {
-    api.gerarPrevisao.mockRejectedValueOnce(new ErroIncerto('Não foi possível conectar ao backend.'));
+    api.gerarPrevisao.mockRejectedValueOnce(new ErroIncerto('Sem conexão com o serviço. Verifique sua internet e tente novamente.'));
     api.gerarPrevisao.mockResolvedValueOnce({ previsao: previsao(), criada: false });
     render(<PrevisaoExperimental />);
     await buscarDados();
     fireEvent.click(gerarBtn());
-    await screen.findByText('Não sabemos se a previsão foi salva.');
+    await screen.findByText('Não conseguimos confirmar se a previsão foi salva.');
     expect(screen.queryByText('Sem chuva prevista')).toBeNull();
     expect(gerarBtn().disabled).toBe(true); // nova previsão só depois de resolver o pedido incerto
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
-    await screen.findByText(/já tinha sido concluído/);
+    await screen.findByText(/já tinha sido salva antes/);
     const [c1, k1] = api.gerarPrevisao.mock.calls[0];
     const [c2, k2] = api.gerarPrevisao.mock.calls[1];
     expect(k2).toBe(k1);
@@ -103,14 +105,42 @@ describe('Previsão experimental', () => {
     sessionStorage.setItem('chuva-londrina:previsao-pendente', JSON.stringify({ chave: 'abc', corpo: { mode: 'historical', reference_time: T14 } }));
     render(<PrevisaoExperimental />);
     expect(await screen.findByRole('button', { name: 'Tentar novamente' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Esquecer este pedido' }));
+    expect(screen.queryByRole('button', { name: 'Tentar novamente' })).toBeNull();
+    expect(sessionStorage.length).toBe(0);
   });
 
-  it('erro definitivo (422) aparece como erro, nunca como "sem chuva"', async () => {
-    api.gerarPrevisao.mockRejectedValue(Object.assign(new Error('Falta a pressão da hora anterior.'), { status: 422, code: 'MISSING_PREVIOUS_HOUR' }));
+  it('falha ao consultar as datas: "Tentar novamente" consulta de novo e libera o formulário', async () => {
+    api.buscarPeriodo.mockRejectedValueOnce(new ErroAmigavel('Sem conexão com o serviço. Verifique sua internet e tente novamente.'));
+    render(<PrevisaoExperimental />);
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent).toContain('Não foi possível consultar as datas disponíveis. Sem conexão com o serviço.');
+    fireEvent.click(within(alerta).getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByLabelText('Data')).toBeTruthy();
+    expect(api.buscarPeriodo).toHaveBeenCalledTimes(2);
+  });
+
+  it('detalhes técnicos do resultado ficam numa seção recolhida', async () => {
+    api.gerarPrevisao.mockResolvedValue({ previsao: previsao(), criada: true });
     render(<PrevisaoExperimental />);
     await buscarDados();
     fireEvent.click(gerarBtn());
-    await screen.findByText(/Não foi possível gerar a previsão: Falta a pressão/);
+    const resultado = await screen.findByRole('status', { name: 'Resultado da previsão' });
+    const detalhes = resultado.querySelector('details');
+    expect(detalhes.open).toBe(false);
+    expect(detalhes.querySelector('summary').textContent).toBe('Detalhes técnicos');
+    expect(detalhes.textContent).toContain('weather-v6-simple-mean-isotonic-v1');
+    expect(detalhes.textContent).toContain('Limiar de decisão');
+    // fora da seção recolhida: só o que o usuário precisa
+    expect(resultado.textContent.replace(detalhes.textContent, '')).not.toMatch(/weather-v6|Limiar|ID da previsão/);
+  });
+
+  it('erro definitivo (422) aparece como erro, nunca como "sem chuva"', async () => {
+    api.gerarPrevisao.mockRejectedValue(new ErroAmigavel('Faltam medições da hora anterior a este horário. Escolha outro horário.', { status: 422, code: 'MISSING_PREVIOUS_HOUR' }));
+    render(<PrevisaoExperimental />);
+    await buscarDados();
+    fireEvent.click(gerarBtn());
+    await screen.findByText(/Não foi possível gerar a previsão. Faltam medições da hora anterior/);
     expect(screen.queryByText(/chuva prevista/i)).toBeNull();
     await waitFor(() => expect(sessionStorage.length).toBe(0));
   });

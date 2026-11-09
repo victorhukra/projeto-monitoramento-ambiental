@@ -10,7 +10,7 @@ const coord = (v) => v.toFixed(3).replace('.', ',');
 
 // Mapa de Londrina: OpenStreetMap + limite do município + ponto de medição dos dados (latitude/longitude do banco).
 // Abre enquadrando o município inteiro.
-export default function CityMap({ station, city, at }) {
+export default function CityMap({ station, city, at, loading = false }) {
   const el = useRef(null);
   const map = useRef(null);
 
@@ -42,7 +42,8 @@ export default function CityMap({ station, city, at }) {
     <>
       <div ref={el} className="city-map" role="region" aria-label="Mapa de Londrina com o limite do município e o ponto de medição" />
       <p className="note">
-        {station ? `Ponto de medição dos dados: latitude ${coord(station.lat)}, longitude ${coord(station.lon)}.` : 'Ponto de medição indisponível.'}
+        {station ? `Ponto de medição dos dados: latitude ${coord(station.lat)}, longitude ${coord(station.lon)}.`
+          : loading ? 'Carregando o ponto de medição…' : 'Ponto de medição indisponível.'}
         {' '}Linha azul: limite do município.
       </p>
     </>

@@ -28,22 +28,28 @@ export default function ResultadoPrevisao({ previsao, legenda, consultadas, reen
       </p>
       <p className="prob"><strong>{pct(probabilidadePct)}</strong> de probabilidade estimada de chuva</p>
       {legenda && <p className="note">{legenda}</p>}
-      {reenvio && <p className="note">Este pedido já tinha sido concluído: o servidor devolveu o registro salvo, sem gerar outra previsão.</p>}
+      {reenvio && <p className="note">Esta previsão já tinha sido salva antes. Mostramos o resultado salvo, sem criar uma previsão repetida.</p>}
 
       {completo && (
         <>
           <dl className="ficha">
             <div><dt>Período previsto</dt><dd>{fmtJanela(previsao.forecastStart, previsao.forecastEnd)}</dd></div>
-            <div><dt>Modo</dt><dd>{previsao.mode === 'historical' ? 'Simulação histórica' : previsao.mode ?? 'não informado'}</dd></div>
             <div><dt>Gerada em</dt><dd>{fmtDataHoraCurta(previsao.createdAt) ?? 'não informado'}</dd></div>
-            <div><dt>Limiar de decisão</dt><dd>{previsao.limiarPct == null ? 'não informado' : pct(previsao.limiarPct)}</dd></div>
-            <div><dt>Versão do modelo</dt><dd><code>{previsao.modelVersion ?? 'não informada'}</code></dd></div>
-            <div><dt>ID da previsão</dt><dd><code>{previsao.predictionId ?? 'não informado'}</code></dd></div>
           </dl>
+          {/* Informações para quem quer conferir o cálculo: ficam disponíveis, mas recolhidas. */}
+          <details className="detalhes-tecnicos">
+            <summary>Detalhes técnicos</summary>
+            <dl className="ficha">
+              <div><dt>Modo</dt><dd>{previsao.mode === 'historical' ? 'Simulação histórica' : previsao.mode ?? 'não informado'}</dd></div>
+              <div><dt>Limiar de decisão</dt><dd>{previsao.limiarPct == null ? 'não informado' : `${pct(previsao.limiarPct)} (a partir desta probabilidade, o resultado é “chuva prevista”)`}</dd></div>
+              <div><dt>Versão do modelo</dt><dd><code>{previsao.modelVersion ?? 'não informada'}</code></dd></div>
+              <div><dt>ID da previsão</dt><dd><code>{previsao.predictionId ?? 'não informado'}</code></dd></div>
+            </dl>
+          </details>
           {entradasMudaram(weather, consultadas) && (
-            <p className="aviso" role="alert">O registro meteorológico foi atualizado entre a busca e a execução. Abaixo estão os valores efetivamente usados pelo modelo.</p>
+            <p className="aviso" role="alert">As medições deste horário foram atualizadas depois da sua busca. Abaixo estão os valores realmente usados na previsão.</p>
           )}
-          <h3 className="sub">Dados usados pelo modelo</h3>
+          <h3 className="subtitulo">Medições usadas na previsão</h3>
           <TabelaMedidas weather={weather} referenceTime={previsao.referenceTime} previousReferenceTime={previsao.previousReferenceTime} />
         </>
       )}

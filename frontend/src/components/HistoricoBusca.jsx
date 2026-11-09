@@ -2,58 +2,79 @@ import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import { listarPrevisoes } from '../services/previsaoApi.js';
 import { fmtDataHoraCurta, fmtDataIso, fmtJanela, hojeEmLondrina, inicioDoDia, pct, somarDias } from '../lib/format.js';
 import { juntarSemDuplicar } from '../lib/previsaoUtil.js';
-import { Empty } from './Panels.jsx';
+import { Empty, ErroComNovaTentativa } from './Panels.jsx';
+import { mensagemParaUsuario } from '../lib/mensagensErro.js';
 
 // Histórico de previsões executadas (GET /predictions). O filtro é pelo dia em que a previsão foi GERADA
 // (created_at), não pela data histórica de referência: uma simulação de setembro feita hoje aparece hoje.
 const POR_PAGINA = 20;
 
-const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, ref) {
+// Filtro padrão: últimos 7 dias, incluindo hoje (horário de Londrina), calculado na hora da consulta.
+const ultimaSemana = () => {
   const hoje = hojeEmLondrina();
-  const [de, setDe] = useState(() => somarDias(hoje, -6)); // últimos 7 dias, incluindo hoje
-  const [ate, setAte] = useState(hoje);
-  const [filtro, setFiltro] = useState(() => ({ de: somarDias(hoje, -6), ate: hoje }));
+  return { de: somarDias(hoje, -6), ate: hoje };
+};
+
+const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, ref) {
+  const [de, setDe] = useState(() => ultimaSemana().de);
+  const [ate, setAte] = useState(() => ultimaSemana().ate);
+  // padrao: o usuário ainda não escolheu datas → cada consulta usa a semana de hoje (a página pode ficar aberta
+  // na virada do dia, e a previsão gerada depois da meia-noite precisa aparecer).
+  const [filtro, setFiltro] = useState({ padrao: true });
   const [lista, setLista] = useState({ status: 'carregando', itens: [], cursor: null }); // carregando | sucesso | erro
   const [maisCarregando, setMaisCarregando] = useState(false);
   const [erroMais, setErroMais] = useState(null);
   const pedido = useRef(null);
+  const [tentativa, setTentativa] = useState(0); // "Tentar novamente" refaz a primeira página
 
   // Intervalo [início do dia "de", início do dia seguinte a "até"), em horário de Londrina.
   const intervalo = useCallback((f) => ({ createdFrom: inicioDoDia(f.de), createdTo: inicioDoDia(somarDias(f.ate, 1)) }), []);
 
   // Primeira página: ao abrir, ao mudar o filtro e depois de cada previsão salva (atualizacao).
+  // lista.consultado guarda as datas usadas na consulta exibida (legenda, mensagem e "Carregar mais").
   useEffect(() => {
     pedido.current?.abort();
     const ctrl = (pedido.current = new AbortController());
+    const f = filtro.padrao ? ultimaSemana() : filtro;
     setLista((l) => ({ ...l, status: 'carregando' }));
     setErroMais(null);
-    listarPrevisoes({ ...intervalo(filtro), limit: POR_PAGINA }, { signal: ctrl.signal })
-      .then(({ itens, proximoCursor }) => !ctrl.signal.aborted && setLista({ status: 'sucesso', itens: juntarSemDuplicar([], itens), cursor: proximoCursor }))
-      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setLista({ status: 'erro', itens: [], cursor: null, mensagem: e.message }));
+    listarPrevisoes({ ...intervalo(f), limit: POR_PAGINA }, { signal: ctrl.signal })
+      .then(({ itens, proximoCursor }) => {
+        if (ctrl.signal.aborted) return;
+        if (filtro.padrao) { setDe(f.de); setAte(f.ate); } // os campos acompanham a semana de hoje
+        setLista({ status: 'sucesso', itens: juntarSemDuplicar([], itens), cursor: proximoCursor, consultado: f });
+      })
+      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setLista({ status: 'erro', itens: [], cursor: null, consultado: f, mensagem: mensagemParaUsuario(e) }));
     return () => ctrl.abort();
-  }, [filtro, atualizacao, intervalo]);
+  }, [filtro, atualizacao, intervalo, tentativa]);
+
+  // Ao sair da tela, cancela também um "Carregar mais" em andamento.
+  useEffect(() => () => pedido.current?.abort(), []);
 
   async function carregarMais() {
+    pedido.current?.abort();
     const ctrl = (pedido.current = new AbortController());
     setMaisCarregando(true);
     setErroMais(null);
     try {
-      const { itens, proximoCursor } = await listarPrevisoes({ ...intervalo(filtro), limit: POR_PAGINA, cursor: lista.cursor }, { signal: ctrl.signal });
-      setLista((l) => ({ ...l, itens: juntarSemDuplicar(l.itens, itens), cursor: proximoCursor }));
+      const { itens, proximoCursor } = await listarPrevisoes({ ...intervalo(lista.consultado), limit: POR_PAGINA, cursor: lista.cursor }, { signal: ctrl.signal });
+      if (!ctrl.signal.aborted) setLista((l) => ({ ...l, itens: juntarSemDuplicar(l.itens, itens), cursor: proximoCursor }));
     } catch (e) {
-      if (e?.name !== 'AbortError') setErroMais(e.message);
+      if (e?.name !== 'AbortError' && !ctrl.signal.aborted) setErroMais(mensagemParaUsuario(e));
     } finally {
-      setMaisCarregando(false);
+      if (!ctrl.signal.aborted) setMaisCarregando(false);
     }
   }
 
   function consultar(e) {
     e.preventDefault();
     if (!de || !ate || de > ate) return;
-    setFiltro({ de, ate });
+    setFiltro({ padrao: false, de, ate });
   }
 
-  const invalido = !de || !ate || de > ate;
+  // Validação das datas: mensagem específica, ligada aos campos (aria-describedby / aria-invalid).
+  const erroDatas = !de || !ate ? 'Preencha as duas datas.' : de > ate ? 'A data inicial não pode ser depois da data final.' : null;
+  const invalido = Boolean(erroDatas);
   const carregando = lista.status === 'carregando';
   return (
     <section className="card" aria-labelledby="t-historico" ref={ref} tabIndex={-1}>
@@ -62,28 +83,30 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
       <form className="acoes" onSubmit={consultar}>
         <div className="campo">
           <label htmlFor="hist-de">Geradas de</label>
-          <input id="hist-de" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)} />
+          <input id="hist-de" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)}
+            aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <div className="campo">
           <label htmlFor="hist-ate">até</label>
-          <input id="hist-ate" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)} />
+          <input id="hist-ate" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)}
+            aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <button type="submit" className="btn" disabled={invalido || carregando}>{carregando ? 'Consultando…' : 'Consultar'}</button>
       </form>
-      {invalido && <p className="campo-erro">A data inicial precisa ser anterior ou igual à final.</p>}
+      {erroDatas && <p className="campo-erro" id="hist-erro">{erroDatas}</p>}
 
       <div className="resultado" aria-live="polite">
         {carregando && !lista.itens.length && <Empty>Consultando o histórico…</Empty>}
-        {lista.status === 'erro' && <p className="err" role="alert">Não foi possível consultar o histórico: {lista.mensagem}</p>}
+        {lista.status === 'erro' && <ErroComNovaTentativa onTentar={() => setTentativa((t) => t + 1)}>Não foi possível consultar o histórico. {lista.mensagem}</ErroComNovaTentativa>}
         {lista.status === 'sucesso' && !lista.itens.length && (
-          <Empty>Nenhuma previsão gerada entre {fmtDataIso(filtro.de)} e {fmtDataIso(filtro.ate)}.</Empty>
+          <Empty>Nenhuma previsão gerada entre {fmtDataIso(lista.consultado.de)} e {fmtDataIso(lista.consultado.ate)}.</Empty>
         )}
         {lista.itens.length > 0 && lista.status !== 'erro' && (
           <div className="scroll">
             <table>
-              <caption className="sr">Previsões geradas entre {fmtDataIso(filtro.de)} e {fmtDataIso(filtro.ate)}</caption>
+              <caption className="sr">Previsões geradas entre {fmtDataIso(lista.consultado.de)} e {fmtDataIso(lista.consultado.ate)}</caption>
               <thead>
-                <tr><th>Gerada em</th><th>Referência</th><th>Período previsto</th><th>Resultado</th><th>Probabilidade estimada</th><th>Versão</th><th>ID</th></tr>
+                <tr><th>Gerada em</th><th>Horário simulado</th><th>Período previsto</th><th>Resultado</th><th>Probabilidade estimada</th></tr>
               </thead>
               <tbody>
                 {lista.itens.map((p) => (
@@ -93,8 +116,6 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
                     <td>{fmtJanela(p.forecastStart, p.forecastEnd)}</td>
                     <td>{p.vaiChover ? 'Chuva prevista' : 'Sem chuva prevista'}{p.isMock && <span className="selo selo-mock">fictício</span>}</td>
                     <td>{pct(p.probabilidadePct)}</td>
-                    <td><code>{p.modelVersion ?? '—'}</code></td>
-                    <td><code title={p.predictionId ?? ''}>{p.predictionId ? `${p.predictionId.slice(0, 8)}…` : '—'}</code></td>
                   </tr>
                 ))}
               </tbody>
@@ -106,7 +127,7 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
             <button type="button" className="link" onClick={carregarMais} disabled={maisCarregando}>{maisCarregando ? 'Carregando…' : 'Carregar mais'}</button>
           </div>
         )}
-        {erroMais && <p className="err" role="alert">Não foi possível carregar mais previsões: {erroMais}</p>}
+        {erroMais && <p className="err" role="alert">Não foi possível carregar mais previsões. {erroMais}</p>}
       </div>
     </section>
   );

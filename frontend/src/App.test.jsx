@@ -8,8 +8,8 @@ vi.mock('./lib/supabase.js', () => ({ supabase: {} }));
 vi.mock('./services/forecastRepo.js', async () => {
   const fx = await import('./test/dbFixture.js');
   return {
-    getCurrent: async () => fx.current, getLast24h: async () => fx.last24, getLastDays: async () => fx.lastDays,
-    getRainEvents: async () => fx.events, getStation: async () => fx.station, getMonthHours: async (_s, y, m) => fx.monthHours(y, m),
+    getCurrent: async () => fx.current, getLastDays: async () => fx.lastDays,
+    getStation: async () => fx.station, getMonthHours: async (_s, y, m) => fx.monthHours(y, m),
     getMonthDetail: async (_s, y, m) => fx.monthHours(y, m).map((r, i) => ({ ...r, temperatura_c: 15 + (i % 10), umidade_pct: 70, nuvens_pct: 50 })),
     getTimeBounds: async () => ({ first: '2024-09-01T00:00:00', last: '2026-09-30T23:00:00' }),
     // mesmo filtro da consulta real: [fim−6 dias, fim+1 dia), a partir dos setembros do fixture
@@ -20,6 +20,12 @@ vi.mock('./services/forecastRepo.js', async () => {
       })
       .map((r) => ({ ...r, temperatura_c: 20 })),
     getDayHours: async (_s, y, m, d) => fx.monthHours(y, m).filter((row) => Number(row.horario.slice(8, 10)) === d),
+    // resumo do dia: 30/09/2026 usa os 24 registros da 1.2 (chuva 3,9 mm às 13h); os outros dias, os setembros do fixture
+    getDayDetail: async (_s, date) => (date === '2026-09-30'
+      ? [...fx.last24].reverse().map((r) => ({ ...r, umidade_pct: 76 }))
+      : fx.monthHours(Number(date.slice(0, 4)), Number(date.slice(5, 7)))
+        .filter((r) => r.horario.startsWith(date))
+        .map((r) => ({ ...r, temperatura_c: 20, umidade_pct: 70, vento_ms: 2 }))),
     getMonthsWithData: async (_s, y) => Array.from({ length: 12 }, (_, i) => i + 1).filter((m) => fx.monthHours(y, m).length),
     getYearsWithData: async (_s, first, last) => Array.from({ length: last - first + 1 }, (_, i) => first + i)
       .filter((y) => Array.from({ length: 12 }, (_, i) => i + 1).some((m) => fx.monthHours(y, m).length)),
@@ -27,32 +33,82 @@ vi.mock('./services/forecastRepo.js', async () => {
 });
 const { default: App } = await import('./App.jsx');
 
-const ready = () => screen.findByText(/Último registro do banco: qua\., 30 de set\., 23:00/);
+const ready = () => screen.findByText(/Dados atualizados até qua\., 30 de set\., 23:00/);
 
 describe('App (dados do banco)', () => {
   it('carrega sob StrictMode e encerra o "atualizando…"', async () => {
     render(<StrictMode><App /></StrictMode>);
     await ready();
     await waitFor(() => expect(screen.queryByText(/atualizando/)).toBeNull());
-    expect(screen.getByRole('group', { name: /^Indicadores/ })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Chuva nas últimas 24h (mm)' })).toBeTruthy();
+    expect(await screen.findByRole('group', { name: 'Indicadores de 30/09/2026' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Chuva por hora (mm)' })).toBeTruthy();
+    expect(screen.queryByText(/últimas 24h/)).toBeNull();
   });
-  it('ao lado do mapa: chuva acumulada nas últimas 24h (sem o card "Clima atual")', async () => {
+  it('durante a primeira carga mostra "Carregando…", nunca "sem registros" ou "indisponível"', async () => {
+    const { container } = render(<App />);
+    expect(screen.getByText('Carregando indicadores…')).toBeTruthy();
+    expect(screen.getByText('Carregando os últimos dias…')).toBeTruthy();
+    expect(screen.getAllByText('Carregando gráfico…')).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/Sem registros|sem medições|indisponíve/);
+    await ready();
+    await waitFor(() => expect(screen.queryByText('Carregando indicadores…')).toBeNull());
+    expect(screen.queryByText('Carregando gráfico…')).toBeNull();
+  });
+  it('mapa ocupa a seção sozinho (sem o card de chuva acumulada nem "Clima atual")', async () => {
     render(<App />);
     await ready();
-    const card = screen.getByRole('heading', { name: 'Chuva acumulada nas últimas 24h' }).closest('section');
-    expect(card.closest('#mapa')).toBeTruthy();
-    expect(card.querySelector('strong').textContent).toBe('5,1 mm'); // 3,9 + 0,7 + 0,5 no fixture
+    expect(document.querySelector('#mapa').querySelectorAll(':scope > .card')).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: 'Chuva acumulada nas últimas 24h' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Clima atual' })).toBeNull();
     expect(screen.queryByText(/Alerta/)).toBeNull();
   });
-  it('maior chuva das últimas 24h nos indicadores, no lugar de "Chuva no último registro"', async () => {
+  it('resumo do dia: abre no dia mais recente do banco, com calendário limitado ao período', async () => {
     render(<App />);
     await ready();
-    const kpi = screen.getByText('Maior chuva nas últimas 24h').closest('.kpi');
+    const kpi = (await screen.findByText('Maior chuva em 1 hora')).closest('.kpi');
     expect(kpi.closest('#agora')).toBeTruthy();
     expect(kpi.textContent).toContain('3,9 mm');
-    expect(screen.queryByText('Chuva no último registro')).toBeNull();
+    expect(kpi.textContent).toContain('às 13h · total do dia 5,1 mm'); // 3,9 + 0,7 + 0,5 no fixture
+    const data = screen.getByLabelText('Ver o dia');
+    expect(data.value).toBe('2026-09-30');
+    expect(data.min).toBe('2024-09-01');
+    expect(data.max).toBe('2026-09-30');
+    expect(screen.queryByRole('button', { name: 'Dia mais recente' })).toBeNull();
+  });
+  it('resumo do dia: escolher uma data mostra os cards e gráficos daquele dia', async () => {
+    render(<App />);
+    await ready();
+    const data = await screen.findByLabelText('Ver o dia');
+    await screen.findByRole('group', { name: 'Indicadores de 30/09/2026' });
+    fireEvent.change(data, { target: { value: '2025-09-03' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar dia' }));
+    const grupo = await screen.findByRole('group', { name: 'Indicadores de 03/09/2025' });
+    expect(within(grupo).getByText('Maior chuva em 1 hora').closest('.kpi').textContent).toContain('2 mm'); // 2 mm às 10h no fixture
+    // chance histórica: só setembro de 2024 é anterior a 2025 no fixture (3 de 30 dias com chuva)
+    expect(within(grupo).getByText('Chance histórica de chuva').closest('.kpi').textContent).toContain('10%dias de setembro com chuva (2024)');
+    expect(within(grupo).getByText('Vento médio').closest('.kpi').textContent).toContain('7 km/h'); // 2 m/s
+    expect(screen.getByRole('img', { name: 'Chuva registrada em 03/09/2025, por hora, em milímetros' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dia mais recente' }));
+    expect(await screen.findByRole('group', { name: 'Indicadores de 30/09/2026' })).toBeTruthy();
+    expect(screen.getByLabelText('Ver o dia').value).toBe('2026-09-30');
+  });
+  it('resumo do dia: dia dentro do período mas sem registros avisa, sem inventar valores', async () => {
+    render(<App />);
+    await ready();
+    const data = await screen.findByLabelText('Ver o dia');
+    await screen.findByRole('group', { name: 'Indicadores de 30/09/2026' });
+    fireEvent.change(data, { target: { value: '2025-01-15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar dia' }));
+    expect(await screen.findByText('Não há registros em 15/01/2025. Escolha outra data.')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: /^Indicadores/ })).toBeNull();
+  });
+  it('resumo do dia: data fora do período bloqueia a busca', async () => {
+    render(<App />);
+    await ready();
+    const data = await screen.findByLabelText('Ver o dia');
+    fireEvent.change(data, { target: { value: '2027-01-01' } });
+    expect(screen.getByText('Escolha uma data entre 01/09/2024 e 30/09/2026.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mostrar dia' }).disabled).toBe(true);
   });
   it('nenhum bloco de demonstração', async () => {
     const { container } = render(<App />);
@@ -125,7 +181,21 @@ describe('App (dados do banco)', () => {
     expect(footer.textContent).toContain('Mapa: © OpenStreetMap');
     const main = screen.getByRole('main');
     expect(main.textContent).not.toMatch(/Fonte/);
-    expect(main.querySelector('.meta').textContent).toContain('Último registro do banco: qua., 30 de set., 23:00');
+    expect(main.querySelector('.meta').textContent).toContain('Dados atualizados até qua., 30 de set., 23:00');
+  });
+  it('comparar dois dias: campos na ordem Ano → Mês → Dia e diferença em frase', async () => {
+    render(<App />);
+    await ready();
+    const secao = within(screen.getByRole('heading', { name: 'Comparar dois dias' }).closest('section'));
+    const rotulos = [...secao.getAllByRole('combobox')].slice(0, 3).map((c) => c.labels[0].textContent);
+    expect(rotulos).toEqual(['Ano', 'Mês', 'Dia']);
+    const botao = secao.getByRole('button', { name: 'Comparar' });
+    await waitFor(() => expect(botao.disabled).toBe(false));
+    fireEvent.click(botao);
+    // padrão: 30/09/2025 (sem chuva no fixture) x 30/09/2026 (2 mm); o fixture não tem temperatura nesses meses
+    expect(await secao.findByText(/No dia 2 choveu 2 mm a mais que no dia 1\./)).toBeTruthy();
+    expect(secao.getByText(/Sem dados suficientes para comparar a temperatura\./)).toBeTruthy();
+    expect(secao.getByRole('heading', { name: 'Dia 1: 30 de setembro de 2025' })).toBeTruthy();
   });
   it('não mostra nada de regiões', async () => {
     const { container } = render(<App />);

@@ -4,7 +4,8 @@ import { fmtDataHoraCurta, fmtDataIso, fmtHoraMin, fmtJanela } from '../lib/form
 import { lerPendente, limparPendente, salvarPendente } from '../lib/pedidoPendente.js';
 import { erroDefinitivo } from '../lib/previsaoUtil.js';
 import ResultadoPrevisao, { TabelaMedidas } from './ResultadoPrevisao.jsx';
-import { Empty } from './Panels.jsx';
+import { Empty, ErroComNovaTentativa } from './Panels.jsx';
+import { mensagemParaUsuario } from '../lib/mensagensErro.js';
 
 // Fluxo principal (contrato v6): escolher data e hora T → Buscar dados → Gerar previsão experimental.
 // O front não calcula features nem a classificação: mostra o que o backend devolve.
@@ -20,6 +21,7 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
   const [envio, setEnvio] = useState({ status: 'ocioso' }); // ocioso | enviando | sucesso | erro | incerto
   const [pendente, setPendente] = useState(lerPendente); // pedido de resultado incerto (sobrevive ao recarregar)
 
+  const reqPeriodo = useRef(null);
   const reqHorarios = useRef(null);
   const reqEntradas = useRef(null);
   const reqEnvio = useRef(null);
@@ -41,20 +43,30 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
         setHorarios({ status: 'sucesso', lista });
         if (lista.length) setHora(lista[0]);
       })
-      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setHorarios({ status: 'erro', lista: [], mensagem: e.message }));
+      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setHorarios({ status: 'erro', lista: [], mensagem: mensagemParaUsuario(e) }));
   }
   const mudarDataRef = useRef(mudarData);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
+  // Período disponível. Também usada pelo "Tentar novamente": tem o próprio AbortController para que a nova
+  // tentativa nunca cancele um POST de previsão em andamento (reqEnvio).
+  function carregarPeriodo() {
+    reqPeriodo.current?.abort();
+    const ctrl = (reqPeriodo.current = new AbortController());
+    setPeriodo({ status: 'carregando' });
     buscarPeriodo({ signal: ctrl.signal })
       .then((p) => {
+        if (ctrl.signal.aborted) return;
         setPeriodo({ status: 'sucesso', ...p });
         if (p.maxDate) mudarDataRef.current(p.maxDate); // começa pelo dia mais recente disponível
       })
-      .catch((e) => e?.name !== 'AbortError' && setPeriodo({ status: 'erro', mensagem: e.message }));
+      .catch((e) => e?.name !== 'AbortError' && !ctrl.signal.aborted && setPeriodo({ status: 'erro', mensagem: mensagemParaUsuario(e) }));
+  }
+  const carregarPeriodoRef = useRef(carregarPeriodo);
+
+  useEffect(() => {
+    carregarPeriodoRef.current();
     return () => {
-      ctrl.abort();
+      reqPeriodo.current?.abort();
       reqHorarios.current?.abort();
       reqEntradas.current?.abort();
       reqEnvio.current?.abort();
@@ -79,7 +91,7 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
       const dados = await buscarEntradas(hora, { signal: ctrl.signal });
       if (!ctrl.signal.aborted) setEntradas({ status: 'sucesso', referenceTime: hora, dados });
     } catch (err) {
-      if (err?.name !== 'AbortError' && !ctrl.signal.aborted) setEntradas({ status: 'erro', referenceTime: hora, mensagem: err.message, code: err.code });
+      if (err?.name !== 'AbortError' && !ctrl.signal.aborted) setEntradas({ status: 'erro', referenceTime: hora, mensagem: mensagemParaUsuario(err), code: err.code });
     }
   }
 
@@ -100,10 +112,10 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
       if (erroDefinitivo(err)) {
         limparPendente();
         setPendente(null);
-        setEnvio({ status: 'erro', mensagem: err.message, code: err.code });
+        setEnvio({ status: 'erro', mensagem: mensagemParaUsuario(err), code: err.code });
       } else {
         // Sem resposta confirmada, 409 em processamento ou 5xx: mantém a chave e o corpo para "Tentar novamente".
-        setEnvio({ status: err.incerto ? 'incerto' : 'erro', mensagem: err.message, code: err.code, manterPendente: true });
+        setEnvio({ status: err.incerto ? 'incerto' : 'erro', mensagem: mensagemParaUsuario(err), code: err.code, manterPendente: true });
       }
     }
   }
@@ -133,12 +145,12 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
         <span className="selo">Simulação histórica</span>
       </div>
       <p className="note">
-        Escolha uma data e hora de referência (horário de Londrina). O sistema busca no banco as medidas desse momento e a pressão
-        da hora anterior, e o modelo estima se vai chover na hora seguinte. Usa registros históricos: não é uma previsão ao vivo.
+        Escolha uma data e uma hora (horário de Londrina). O sistema busca as medições desse momento e a pressão da hora
+        anterior e estima se vai chover na hora seguinte. Usa dados do passado: não é uma previsão ao vivo.
       </p>
 
-      {periodo.status === 'carregando' && <Empty>Consultando o período disponível…</Empty>}
-      {periodo.status === 'erro' && <p className="err" role="alert">Não foi possível consultar o período disponível: {periodo.mensagem}</p>}
+      {periodo.status === 'carregando' && <Empty>Carregando as datas disponíveis…</Empty>}
+      {periodo.status === 'erro' && <ErroComNovaTentativa onTentar={carregarPeriodo}>Não foi possível consultar as datas disponíveis. {periodo.mensagem}</ErroComNovaTentativa>}
       {semPeriodo && <Empty>Nenhum horário disponível.</Empty>}
 
       {periodo.status === 'sucesso' && !semPeriodo && (
@@ -164,20 +176,20 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
               {entradas.status === 'carregando' ? 'Buscando…' : 'Buscar dados'}
             </button>
           </div>
-          {horarios.status === 'erro' && <p className="err" role="alert">Não foi possível listar os horários: {horarios.mensagem}</p>}
+          {horarios.status === 'erro' && <ErroComNovaTentativa onTentar={() => mudarData(data)}>Não foi possível listar os horários. {horarios.mensagem}</ErroComNovaTentativa>}
           {horarios.status === 'sucesso' && !horarios.lista.length && (
             <p className="empty">Não há horários com dados completos em {fmtDataIso(data)}. Escolha outra data.</p>
           )}
-          {hora && <p className="note">Janela prevista: <strong>{fmtJanela(janela?.forecastStart ?? hora, janela?.forecastEnd ?? umaHoraDepois(hora))}</strong></p>}
+          {hora && <p className="note">Previsão para: <strong>{fmtJanela(janela?.forecastStart ?? hora, janela?.forecastEnd ?? umaHoraDepois(hora))}</strong></p>}
         </form>
       )}
 
       <div aria-live="polite">
         {entradas.status === 'carregando' && <Empty>Buscando as medidas de {fmtDataHoraCurta(entradas.referenceTime)}…</Empty>}
-        {entradas.status === 'erro' && <p className="err" role="alert">Não foi possível buscar os dados: {entradas.mensagem}</p>}
+        {entradas.status === 'erro' && <p className="err" role="alert">Não foi possível buscar os dados. {entradas.mensagem}</p>}
         {entradasValidas && (
           <div className="entradas">
-            <h3 className="sub">Dados encontrados (somente leitura)</h3>
+            <h3 className="subtitulo">Medições deste horário</h3>
             <TabelaMedidas weather={entradas.dados.weather} referenceTime={entradas.dados.referenceTime} previousReferenceTime={entradas.dados.previousReferenceTime} />
           </div>
         )}
@@ -186,16 +198,15 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
       {pendente && !enviando && (
         <div className="aviso" role="alert">
           <p>
-            <strong>{envio.status === 'incerto' ? 'Não sabemos se a previsão foi salva.' : 'Há um pedido de previsão sem resposta confirmada.'}</strong>{' '}
-            Referência: {fmtDataHoraCurta(pendente.corpo.reference_time)}.
+            <strong>{envio.status === 'incerto' ? 'Não conseguimos confirmar se a previsão foi salva.' : 'A última previsão pode não ter sido concluída.'}</strong>{' '}
+            Horário escolhido: {fmtDataHoraCurta(pendente.corpo.reference_time)}.
             {envio.mensagem ? ` ${envio.mensagem}` : ''}
-            {envio.code === 'REQUEST_IN_PROGRESS' ? ' O pedido ainda está sendo processado: aguarde um pouco antes de tentar de novo.' : ''}
           </p>
-          <p className="note">Consulte o histórico antes de reenviar. “Tentar novamente” reenvia o mesmo pedido: se ele já tiver sido salvo, o servidor devolve o registro existente, sem duplicar.</p>
+          <p className="note">Você pode conferir no histórico se ela foi salva ou tentar de novo. Tentar de novo não cria previsões repetidas. “Esquecer este pedido” só fecha este aviso: se a previsão tiver sido salva, ela continua no histórico.</p>
           <div className="acoes">
             <button type="button" className="btn" onClick={() => enviar(pendente)}>Tentar novamente</button>
             {onConsultarHistorico && <button type="button" className="link" onClick={onConsultarHistorico}>Consultar histórico</button>}
-            <button type="button" className="link" onClick={descartarPendente}>Descartar pedido</button>
+            <button type="button" className="link" onClick={descartarPendente}>Esquecer este pedido</button>
           </div>
         </div>
       )}
@@ -205,12 +216,12 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
           {enviando ? 'Gerando…' : envio.status === 'sucesso' ? 'Gerar nova previsão' : 'Gerar previsão experimental'}
         </button>
         {!entradasValidas && !enviando && <p className="note">Busque os dados do horário escolhido para liberar a previsão.</p>}
-        {enviando && <p className="note" role="status">Executando o modelo e salvando o resultado…</p>}
+        {enviando && <p className="note" role="status">Calculando a previsão e salvando o resultado…</p>}
       </div>
 
       {envio.status === 'erro' && !envio.manterPendente && (
         <p className="err" role="alert">
-          {envio.code === 'IDEMPOTENCY_CONFLICT' ? 'Conflito de pedido: ' : 'Não foi possível gerar a previsão: '}{envio.mensagem}
+          Não foi possível gerar a previsão. {envio.mensagem}
         </p>
       )}
       {envio.status === 'sucesso' && (
