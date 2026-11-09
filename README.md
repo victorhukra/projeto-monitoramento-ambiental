@@ -239,5 +239,3 @@ Os documentos em `docs/originals/` e `docs/historico/` são materiais de referê
 | `/predict` retorna `MISSING_PREVIOUS_HOUR` | Não existe registro meteorológico válido exatamente uma hora antes de T |
 | Não aparecem datas/horários | Verifique a tabela `dataset_weather_goes`, seus registros e os campos obrigatórios |
 | Frontend não carrega dados do painel | `VITE_SUPABASE_URL`, chave pública e políticas RLS |
-
-
