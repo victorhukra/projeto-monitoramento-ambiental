@@ -87,6 +87,12 @@ nav a:hover { background: var(--tint); }
 table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; }
+.celula-excluir { width: 1%; padding-right: 2px; }
+.btn-lixeira { display: inline-grid; width: 36px; height: 36px; place-items: center; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #b42318; cursor: pointer; }
+.btn-lixeira:hover:not(:disabled) { border-color: #f3c7c4; background: #fff1f0; }
+.btn-lixeira:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.btn-lixeira:disabled { cursor: wait; opacity: .55; }
+.btn-lixeira svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .bar-row { margin: 10px 0; }
 .bar { height: 14px; overflow: hidden; margin-top: 4px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
 .bar i { display: block; height: 100%; transition: width 420ms var(--ease-out); }
