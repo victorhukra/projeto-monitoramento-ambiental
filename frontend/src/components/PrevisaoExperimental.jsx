@@ -6,6 +6,7 @@ import { erroDefinitivo } from '../lib/previsaoUtil.js';
 import ResultadoPrevisao, { TabelaMedidas } from './ResultadoPrevisao.jsx';
 import { Empty, ErroComNovaTentativa } from './Panels.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
+import DateInput from './DateInput.jsx';
 
 // Fluxo principal (contrato v6): escolher data e hora T → Buscar dados → Gerar previsão experimental.
 // O front não calcula features nem a classificação: mostra o que o backend devolve.
@@ -159,8 +160,8 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
           <div className="acoes">
             <div className="campo">
               <label htmlFor="prev-data">Data</label>
-              <input id="prev-data" type="date" required min={periodo.minDate} max={periodo.maxDate} value={data}
-                onChange={(e) => mudarData(e.target.value)} disabled={bloqueado} />
+              <DateInput id="prev-data" required min={periodo.minDate} max={periodo.maxDate} value={data} label="Data da previsão"
+                onChange={mudarData} disabled={bloqueado} />
             </div>
             <div className="campo">
               <label htmlFor="prev-hora">Hora</label>

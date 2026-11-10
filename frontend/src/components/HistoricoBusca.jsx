@@ -4,6 +4,7 @@ import { fmtDataHoraCurta, fmtDataIso, fmtJanela, hojeEmLondrina, inicioDoDia, p
 import { juntarSemDuplicar } from '../lib/previsaoUtil.js';
 import { Empty, ErroComNovaTentativa } from './Panels.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
+import DateInput from './DateInput.jsx';
 
 // Histórico de previsões executadas (GET /predictions). O filtro é pelo dia em que a previsão foi GERADA
 // (created_at), não pela data histórica de referência: uma simulação de setembro feita hoje aparece hoje.
@@ -99,12 +100,12 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
       <form className="acoes" onSubmit={consultar}>
         <div className="campo">
           <label htmlFor="hist-de">Geradas de</label>
-          <input id="hist-de" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)}
+          <DateInput id="hist-de" value={de} max={ate || undefined} label="Geradas de" onChange={setDe}
             aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <div className="campo">
           <label htmlFor="hist-ate">até</label>
-          <input id="hist-ate" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)}
+          <DateInput id="hist-ate" value={ate} min={de || undefined} label="Geradas até" onChange={setAte}
             aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <button type="submit" className="btn" disabled={invalido || carregando}>{carregando ? 'Consultando…' : 'Consultar'}</button>
