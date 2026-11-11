@@ -443,6 +443,7 @@ button, .link { transition: transform 180ms var(--ease-out), box-shadow 200ms va
 :root:not([data-theme="escuro"]) {
   --bg: #f2f6fb;
   --line: #dfe7f1;
+  --chart-area: #d6e8ff;
 }
 :root:not([data-theme="escuro"]) .today-section {
   border-color: #d8e5f4;
@@ -452,20 +453,20 @@ button, .link { transition: transform 180ms var(--ease-out), box-shadow 200ms va
   box-shadow: 0 18px 48px rgb(40 77 125 / 11%);
 }
 :root:not([data-theme="escuro"]) .today-section .kpi:not(:first-child) {
-  border-color: #e0e8f2;
+  border-color: #d7e5f4;
   background: linear-gradient(155deg, #fff, #fbfdff);
-  box-shadow: 0 8px 22px rgb(40 77 125 / 8%);
+  box-shadow: 0 10px 26px rgb(76 143 220 / 22%), 0 1px 3px rgb(31 55 87 / 6%);
 }
 :root:not([data-theme="escuro"]) .today-section .grid2 > .card,
 :root:not([data-theme="escuro"]) .map-card {
-  border-color: #e0e8f2;
+  border-color: #d7e5f4;
   background: #fff;
-  box-shadow: 0 8px 24px rgb(40 77 125 / 7%);
+  box-shadow: 0 12px 30px rgb(76 143 220 / 21%), 0 1px 3px rgb(31 55 87 / 6%);
 }
 :root:not([data-theme="escuro"]) .forecast-section .day {
-  border-color: #e0e8f2;
+  border-color: #d7e5f4;
   background: linear-gradient(160deg, #fff, #fafdff);
-  box-shadow: 0 7px 20px rgb(40 77 125 / 7%);
+  box-shadow: 0 10px 25px rgb(76 143 220 / 21%), 0 1px 3px rgb(31 55 87 / 6%);
 }
 :root:not([data-theme="escuro"]) .update-chip {
   border-color: #dfe7f1;
@@ -499,4 +500,16 @@ button, .link { transition: transform 180ms var(--ease-out), box-shadow 200ms va
   from { opacity: 0; transform: scale(.6); }
   72% { opacity: 1; transform: scale(1.12); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* The sun/moon icon gives the theme switch a quick, lightweight transition. */
+.theme-toggle svg { transform-origin: center; animation: theme-icon-jump 520ms cubic-bezier(.2, .8, .2, 1.25) both; }
+
+@keyframes theme-icon-jump {
+  0% { opacity: .3; transform: rotate(-120deg) scale(.4); }
+  68% { opacity: 1; transform: rotate(18deg) scale(1.22); }
+  100% { transform: rotate(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle svg { animation: none; }
 }

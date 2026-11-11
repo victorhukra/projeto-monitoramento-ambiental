@@ -49,14 +49,14 @@ function ChartTooltip({ active, label, payload, formatar }) {
   );
 }
 
-function ChartShell({ label, children, className = '' }) {
+function ChartShell({ label, children, className = '', eager = false }) {
   const container = useRef(null);
   const suportaIntersectionObserver = typeof window !== 'undefined' && 'IntersectionObserver' in window;
-  const [visible, setVisible] = useState(() => !suportaIntersectionObserver);
+  const [visible, setVisible] = useState(() => eager || !suportaIntersectionObserver);
 
   useEffect(() => {
     const element = container.current;
-    if (!element || !suportaIntersectionObserver) return undefined;
+    if (eager || !element || !suportaIntersectionObserver) return undefined;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.12) {
         setVisible(true);
@@ -65,7 +65,7 @@ function ChartShell({ label, children, className = '' }) {
     }, { threshold: [0.12] });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [suportaIntersectionObserver]);
+  }, [eager, suportaIntersectionObserver]);
 
   return (
     <div ref={container} className={`chart ${className}`} role="img" aria-label={label} data-visible={visible}>
@@ -91,7 +91,7 @@ export function RainBars({ data, label = 'Chuva registrada por hora, em milímet
 
   return (
     <>
-      <ChartShell label={label}>
+      <ChartShell label={label} eager>
         <BarChart data={rows} margin={{ top: 14, right: 10, bottom: 4, left: 0 }} accessibilityLayer={false}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="hora" interval={horaTickInterval(rows.length)} tick={tick} tickLine={false} axisLine={axisLine} />
@@ -117,7 +117,7 @@ export function TempLine({ data, label = 'Temperatura registrada por hora, em gr
 
   return (
     <>
-      <ChartShell label={label}>
+      <ChartShell label={label} eager>
         <AreaChart data={rows} margin={{ top: 14, right: 10, bottom: 4, left: 0 }} accessibilityLayer={false}>
           <CartesianGrid {...grid} />
           <XAxis dataKey="hora" interval={horaTickInterval(rows.length)} tick={tick} tickLine={false} axisLine={axisLine} />
