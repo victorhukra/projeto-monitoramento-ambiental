@@ -195,3 +195,10 @@ export async function listarPrevisoes({ createdFrom, createdTo, limit = 20, curs
   return { itens: corpo.items.map(normalizarPrevisao), proximoCursor: corpo.next_cursor ?? null };
 }
 
+// DELETE /predictions/:id remove uma previsão salva pelo backend.
+export async function excluirPrevisao(predictionId, { signal } = {}) {
+  const rota = `${ROTAS.previsoes}/${encodeURIComponent(predictionId)}`;
+  const { ok, status, corpo } = await requisitar(rota, { signal, method: 'DELETE' });
+  if (!ok) throw erroHttp(status, corpo, rota);
+}
+

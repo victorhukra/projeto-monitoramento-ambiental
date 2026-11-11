@@ -10,7 +10,7 @@ const coord = (v) => v.toFixed(3).replace('.', ',');
 
 // Mapa de Londrina: OpenStreetMap + limite do município + ponto de medição dos dados (latitude/longitude do banco).
 // Abre enquadrando o município inteiro.
-export default function CityMap({ station, city, at, loading = false }) {
+export default function CityMap({ station, city, at, loading = false, visible = true }) {
   const el = useRef(null);
   const map = useRef(null);
 
@@ -37,6 +37,14 @@ export default function CityMap({ station, city, at, loading = false }) {
       .addTo(map.current);
     return () => marker.remove();
   }, [station, city, at]);
+
+  // O painel fica montado ao trocar de tela para preservar os tiles e impedir o flash branco ao retornar.
+  // Leaflet precisa recalcular as dimensões depois que o elemento sai de display:none.
+  useEffect(() => {
+    if (!visible || !map.current) return undefined;
+    const frame = window.requestAnimationFrame(() => map.current?.invalidateSize({ pan: false, animate: false }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [visible]);
 
   return (
     <>

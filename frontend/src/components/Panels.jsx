@@ -55,6 +55,20 @@ export function Indicators({ dia }) {
 
 const deg = (v) => (v == null ? '—' : `${Math.round(v)}°`);
 
+function WeatherIcon({ rainy }) {
+  return rainy ? (
+    <svg className="weather-icon rainy" viewBox="0 0 36 36" aria-hidden="true">
+      <path d="M10.2 21.5a7.1 7.1 0 0 1 .4-14.2A9.3 9.3 0 0 1 28 10.8a5.4 5.4 0 0 1-1.2 10.7H10.2Z" />
+      <path d="m12 25-1.3 3.2m7-3.2-1.3 3.2m7-3.2-1.3 3.2" />
+    </svg>
+  ) : (
+    <svg className="weather-icon sunny" viewBox="0 0 36 36" aria-hidden="true">
+      <circle cx="18" cy="18" r="6" />
+      <path d="M18 3.5v4m0 21v4m14.5-14.5h-4m-21 0h-4m24.8-10.3-2.8 2.8m-14.9 14.9-2.8 2.8m20.5 0-2.8-2.8M8.1 8.1 5.3 5.3" />
+    </svg>
+  );
+}
+
 // 7 dias observados: chuva acumulada no dia e temperatura máx./mín. (só leitura).
 // hours (opcional): quantos registros horários o dia tem no banco. 0 = sem medições; < 24 = dia parcial.
 export function LastDays({ days, error, loading = false }) {
@@ -68,7 +82,8 @@ export function LastDays({ days, error, loading = false }) {
           <b>{fmtDay(d.date)}</b>
           {d.hours === 0 ? <span>sem medições</span> : (
             <>
-              <span>{mm(d.rainMm)}</span>
+              {d.rainMm != null && <WeatherIcon rainy={d.rainMm > 0} />}
+              <span className="day-rain">{mm(d.rainMm)}</span>
               <small>{deg(d.tMax)} / {deg(d.tMin)}</small>
               {typeof d.hours === 'number' && d.hours < 24 && <small className="parcial">dados de {d.hours} das 24 horas</small>}
             </>

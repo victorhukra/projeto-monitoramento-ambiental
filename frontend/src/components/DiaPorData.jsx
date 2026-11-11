@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { getDataPeriod, getDayReport } from '../services/weatherApi.js';
 import { fmtDataIso, mm } from '../lib/format.js';
-import { RainBars, TempLine } from './Charts.jsx';
 import { AvisoDeFalha, Empty, Indicators } from './Panels.jsx';
+import DateInput from './DateInput.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
+
+const DATA_POR_EXTENSO = new Intl.DateTimeFormat('pt-BR', {
+  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+});
+const dataPorExtenso = (iso) => DATA_POR_EXTENSO.format(new Date(`${iso}T12:00:00Z`));
+
+const RainBars = lazy(() => import('./Charts.jsx').then((charts) => ({ default: charts.RainBars })));
+const TempLine = lazy(() => import('./Charts.jsx').then((charts) => ({ default: charts.TempLine })));
 
 // Resumo de um dia: indicadores e gráficos de chuva e temperatura hora a hora, só com registros do banco.
 // Abre no dia mais recente do banco; o calendário só aceita datas entre o primeiro e o último registro,
@@ -80,7 +88,7 @@ export default function DiaPorData({ atualizacao = 0, avisoNoTopo = false }) {
         <div>
           <h2 id="t-agora">Resumo do dia</h2>
           <p className="note">
-            Registros observados{dia.data ? ` em ${fmtDataIso(dia.data)}` : ''} · cidade toda
+            Registros observados · cidade toda
             {parcial ? ` · dados de ${r.hours} das 24 horas` : ''}
           </p>
         </div>
@@ -88,8 +96,8 @@ export default function DiaPorData({ atualizacao = 0, avisoNoTopo = false }) {
           <form className="acoes semana-form" onSubmit={mostrar}>
             <div className="campo">
               <label htmlFor="dia-data">Ver o dia</label>
-              <input id="dia-data" type="date" min={minDate} max={maxDate} value={data} required
-                onChange={(e) => setData(e.target.value)} aria-describedby="dia-limites" />
+              <DateInput id="dia-data" min={minDate} max={maxDate} value={data} required label="Ver o dia"
+                onChange={setData} aria-describedby="dia-limites" />
             </div>
             <button type="submit" className="btn" disabled={foraDoPeriodo || carregando}>
               {carregando ? 'Buscando…' : 'Mostrar dia'}
@@ -99,6 +107,7 @@ export default function DiaPorData({ atualizacao = 0, avisoNoTopo = false }) {
           </form>
         )}
       </div>
+      {dia.data && <h3 className="day-report-date">{dataPorExtenso(dia.data)}</h3>}
       {periodo.status === 'erro' && (
         <AvisoDeFalha avisoNoTopo={avisoNoTopo} onTentar={tentarPeriodoDeNovo}>Não foi possível consultar as datas disponíveis. {periodo.mensagem}</AvisoDeFalha>
       )}
@@ -127,10 +136,14 @@ export default function DiaPorData({ atualizacao = 0, avisoNoTopo = false }) {
             <div className="grid2">
               <div className="card"><h3>Chuva por hora (mm)</h3>
                 <p className="note">Total do dia: {mm(r.totalMm)}{r.rainPeak?.t ? ' · maior chuva em destaque' : ''}</p>
-                <RainBars data={r.hourly} destaque={r.rainPeak?.t ?? null} label={`Chuva registrada em ${fmtDataIso(r.date)}, por hora, em milímetros`} /></div>
+                <Suspense fallback={<Empty>Carregando gráfico…</Empty>}>
+                  <RainBars data={r.hourly} destaque={r.rainPeak?.t ?? null} label={`Chuva registrada em ${fmtDataIso(r.date)}, por hora, em milímetros`} />
+                </Suspense></div>
               <div className="card"><h3>Temperatura por hora (°C)</h3>
                 <p className="note">Temperatura máxima em destaque</p>
-                <TempLine data={r.hourly} destaque={r.tempMax?.t ?? null} label={`Temperatura registrada em ${fmtDataIso(r.date)}, por hora, em graus Celsius`} /></div>
+                <Suspense fallback={<Empty>Carregando gráfico…</Empty>}>
+                  <TempLine data={r.hourly} destaque={r.tempMax?.t ?? null} label={`Temperatura registrada em ${fmtDataIso(r.date)}, por hora, em graus Celsius`} />
+                </Suspense></div>
             </div>
           </>
         )}

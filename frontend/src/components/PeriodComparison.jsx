@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { getDayHours, getMonthHours, getMonthsWithData, getYearsWithData } from '../services/forecastRepo.js';
-import { ComparisonBars } from './Charts.jsx';
-import { AvisoDeFalha } from './Panels.jsx';
+import { AvisoDeFalha, Empty } from './Panels.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
 import { fmtDataIso, hojeEmLondrina } from '../lib/format.js';
+
+const ComparisonBars = lazy(() => import('./Charts.jsx').then((charts) => ({ default: charts.ComparisonBars })));
 
 const periodValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const daysInMonth = (year, month) => new Date(year, month, 0).getDate();
@@ -54,7 +55,9 @@ function ComparisonCard({ title, unit, periods, values }) {
     <div className="card">
       <h3>{title} ({unit})</h3>
       <p className="note">Barras a partir do zero · dia 2 em destaque</p>
-      <ComparisonBars values={itens} formatar={(value) => metric(value, unit)} label={descricao} />
+      <Suspense fallback={<Empty>Carregando gráfico…</Empty>}>
+        <ComparisonBars values={itens} formatar={(value) => metric(value, unit)} label={descricao} />
+      </Suspense>
     </div>
   );
 }
@@ -209,15 +212,15 @@ export default function PeriodComparison({ latestDate, atualizacao = 0, avisoNoT
   // Consulta da comparação: uma nova comparação ou a saída da tela cancelam a anterior,
   // para nenhuma resposta atrasada sobrescrever o resultado atual.
   const comparacaoEmAndamento = useRef(null);
+  const comparacaoInicial = useRef(null);
   useEffect(() => () => comparacaoEmAndamento.current?.abort(), []);
 
-  async function compare(event) {
-    event.preventDefault();
+  const compare = useCallback(async (event) => {
+    event?.preventDefault();
     comparacaoEmAndamento.current?.abort();
     const controller = (comparacaoEmAndamento.current = new AbortController());
     setLoading(true);
     setError(null);
-    setResult(null);
 
     try {
       const summaries = await Promise.all(periods.map(async (period) => {
@@ -230,14 +233,24 @@ export default function PeriodComparison({ latestDate, atualizacao = 0, avisoNoT
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }
+  }, [periods]);
 
   const comparisonDisabled = loading || checkingYears || checkingMonths.some(Boolean) || checkingDates.some(Boolean) || datesWithData.some((days) => !days.length);
 
+  // Carrega uma comparação dos dias padrão assim que a cadeia de disponibilidade termina.
+  // Depois que a pessoa escolhe datas manualmente, ela compara pelo botão do formulário.
+  useEffect(() => {
+    if (comparisonDisabled || userSelectedDate) return;
+    const key = periods.join('|');
+    if (comparacaoInicial.current === key) return;
+    comparacaoInicial.current = key;
+    compare();
+  }, [comparisonDisabled, compare, periods, userSelectedDate]);
+
   return (
-    <section className="period-compare" aria-labelledby="t-comparar-periodos">
+    <section id="comparar" className="period-compare" aria-labelledby="t-comparar-periodos">
       <h2 id="t-comparar-periodos">Comparar dois dias</h2>
-      <p className="note">Compare a chuva acumulada e a temperatura média de dois dias.</p>
+      <p className="note">Escolha dia, mês e ano para cada data. Só aparecem datas com observações meteorológicas.</p>
       <form className="period-form" onSubmit={compare}>
         {periods.map((period, index) => {
           const [year, month, day] = period.split('-').map(Number);
@@ -257,21 +270,20 @@ export default function PeriodComparison({ latestDate, atualizacao = 0, avisoNoT
               setDatesWithData((current) => current.map((value, i) => i === index ? [] : value));
               setAvailabilityError(null);
             }
-            setResult(null);
             setError(null);
           };
 
           return (
-            <div className="period-selection" key={index}>
-              <strong>Dia {index + 1}</strong>
+            <fieldset className="period-selection" key={index}>
+              <legend>{index === 0 ? 'Primeiro dia' : 'Segundo dia'}</legend>
               <div className="period-fields">
                 <div className="campo">
-                  <label htmlFor={`period-year-${index}`}>Ano</label>
-                  <select id={`period-year-${index}`} value={yearsWithData.includes(year) ? year : ''} disabled={loading || checkingYears || !yearsWithData.length} onChange={(event) => updatePeriod(Number(event.target.value), month, day, true, true)}>
-                    {checkingYears && <option value="">Buscando anos…</option>}
-                    {!checkingYears && falhaEm === 'anos' && !yearsWithData.length && <option value="">Indisponível</option>}
-                    {!checkingYears && !falhaEm && !yearsWithData.length && <option value="">Sem anos com dados</option>}
-                    {yearsWithData.map((availableYear) => <option key={availableYear} value={availableYear}>{availableYear}</option>)}
+                  <label htmlFor={`period-day-${index}`}>Dia</label>
+                  <select id={`period-day-${index}`} value={datesWithData[index].includes(day) ? day : ''} disabled={loading || checkingDates[index] || !datesWithData[index].length} onChange={(event) => updatePeriod(year, month, Number(event.target.value))}>
+                    {checkingDates[index] && <option value="">Buscando datas…</option>}
+                    {!checkingDates[index] && falhaEm && !datesWithData[index].length && <option value="">Indisponível</option>}
+                    {!checkingDates[index] && !falhaEm && !datesWithData[index].length && <option value="">Sem datas com dados</option>}
+                    {datesWithData[index].map((optionDay) => <option key={optionDay} value={optionDay}>{String(optionDay).padStart(2, '0')}</option>)}
                   </select>
                 </div>
                 <div className="campo">
@@ -284,19 +296,19 @@ export default function PeriodComparison({ latestDate, atualizacao = 0, avisoNoT
                   </select>
                 </div>
                 <div className="campo">
-                  <label htmlFor={`period-day-${index}`}>Dia</label>
-                  <select id={`period-day-${index}`} value={datesWithData[index].includes(day) ? day : ''} disabled={loading || checkingDates[index] || !datesWithData[index].length} onChange={(event) => updatePeriod(year, month, Number(event.target.value))}>
-                    {checkingDates[index] && <option value="">Buscando datas…</option>}
-                    {!checkingDates[index] && falhaEm && !datesWithData[index].length && <option value="">Indisponível</option>}
-                    {!checkingDates[index] && !falhaEm && !datesWithData[index].length && <option value="">Sem datas com dados</option>}
-                    {datesWithData[index].map((optionDay) => <option key={optionDay} value={optionDay}>{optionDay}</option>)}
+                  <label htmlFor={`period-year-${index}`}>Ano</label>
+                  <select id={`period-year-${index}`} value={yearsWithData.includes(year) ? year : ''} disabled={loading || checkingYears || !yearsWithData.length} onChange={(event) => updatePeriod(Number(event.target.value), month, day, true, true)}>
+                    {checkingYears && <option value="">Buscando anos…</option>}
+                    {!checkingYears && falhaEm === 'anos' && !yearsWithData.length && <option value="">Indisponível</option>}
+                    {!checkingYears && !falhaEm && !yearsWithData.length && <option value="">Sem anos com dados</option>}
+                    {yearsWithData.map((availableYear) => <option key={availableYear} value={availableYear}>{availableYear}</option>)}
                   </select>
                 </div>
               </div>
-            </div>
+            </fieldset>
           );
         })}
-        <button className="btn" type="submit" disabled={comparisonDisabled}>{loading ? 'Carregando…' : 'Comparar'}</button>
+        <button className="btn period-submit" type="submit" disabled={comparisonDisabled}>{loading ? 'Carregando…' : 'Comparar'}</button>
       </form>
 
       {availabilityError && (

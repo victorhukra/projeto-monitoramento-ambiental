@@ -21,6 +21,7 @@ Este README descreve como configurar e executar a versão presente neste reposit
 | `GET` | `/weather-inputs?reference_time=...` | Medidas de T e pressão de T−1h, sem gerar previsão |
 | `POST` | `/predict` | Executa o modelo e persiste a previsão |
 | `GET` | `/predictions` | Consulta o histórico de previsões |
+| `DELETE` | `/predictions/<prediction_id>` | Exclui uma previsão específica do histórico |
 | `POST` | `/internal/predict` | Rota interna de inferência sem persistência; não é usada pelo fluxo normal do Frontend |
 
 O fluxo principal da interface é:

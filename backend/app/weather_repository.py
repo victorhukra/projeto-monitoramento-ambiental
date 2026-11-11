@@ -64,3 +64,5 @@ class WeatherRepository:
         if cursor:
             query['or']=f'(created_at.lt.{cursor[0]},and(created_at.eq.{cursor[0]},prediction_id.lt.{cursor[1]}))'
         return self._request('resultados_previsoes_ia',query)
+    def delete_prediction(self,prediction_id):
+        return self._request('resultados_previsoes_ia',{'prediction_id':f'eq.{prediction_id}','select':'prediction_id'},'DELETE',prefer='return=representation')

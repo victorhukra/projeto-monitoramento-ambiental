@@ -70,7 +70,7 @@ def create_app(settings=None,repository=None,model=None):
             response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Vary'] = 'Origin'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Idempotency-Key'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
 
         return response
     @app.route('/',defaults={'path':''},methods=['OPTIONS'])
@@ -131,6 +131,15 @@ def create_app(settings=None,repository=None,model=None):
         except RepositoryUnavailable:raise ServiceError(503,'HISTORY_UNAVAILABLE','Não foi possível consultar o histórico.') from None
         more=len(rows)>limit;items=rows[:limit]
         return jsonify(items=[public_prediction(row) for row in items],next_cursor=encode_cursor(items[-1]) if more and items else None)
+    @app.delete('/predictions/<prediction_id>')
+    def delete_prediction(prediction_id):
+        try: prediction_id=str(UUID(prediction_id))
+        except (ValueError,AttributeError): raise ServiceError(422,'INVALID_PREDICTION_ID','Identificador de previsão inválido.','prediction_id') from None
+        repo=database()
+        try: deleted=repo.delete_prediction(prediction_id)
+        except RepositoryUnavailable: raise ServiceError(503,'DELETE_UNAVAILABLE','Não foi possível excluir a previsão.') from None
+        if not deleted: raise ServiceError(404,'PREDICTION_NOT_FOUND','Previsão não encontrada.')
+        return '',204
     @app.errorhandler(ServiceError)
     def handle_service_error(error):
         if error.status>=500:logger.warning('%s %s → %s %s: %s',request.method,request.path,error.status,error.code,error.message)

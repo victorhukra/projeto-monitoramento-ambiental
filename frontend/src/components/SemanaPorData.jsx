@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getDataPeriod, getWeekEnding } from '../services/weatherApi.js';
 import { fmtDataIso, fmtDay, somarDias } from '../lib/format.js';
 import { AvisoDeFalha, LastDays } from './Panels.jsx';
+import DateInput from './DateInput.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
 
 // "Últimos 7 dias" com escolha de data: mostra os 7 dias que terminam na data escolhida.
@@ -83,8 +84,8 @@ export default function SemanaPorData({ recentes, erroRecentes, carregandoRecent
           <form className="acoes semana-form" onSubmit={mostrar}>
             <div className="campo">
               <label htmlFor="semana-data">Ver 7 dias até</label>
-              <input id="semana-data" type="date" min={minDate} max={maxDate} value={data} required
-                onChange={(e) => setData(e.target.value)} aria-describedby="semana-limites" />
+              <DateInput id="semana-data" min={minDate} max={maxDate} value={data} required label="Ver 7 dias até"
+                onChange={setData} aria-describedby="semana-limites" />
             </div>
             <button type="submit" className="btn" disabled={foraDoPeriodo || escolha?.status === 'carregando'}>
               {escolha?.status === 'carregando' ? 'Buscando…' : 'Mostrar semana'}

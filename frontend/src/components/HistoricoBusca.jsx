@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
-import { listarPrevisoes } from '../services/previsaoApi.js';
+import { excluirPrevisao, listarPrevisoes } from '../services/previsaoApi.js';
 import { fmtDataHoraCurta, fmtDataIso, fmtJanela, hojeEmLondrina, inicioDoDia, pct, somarDias } from '../lib/format.js';
 import { juntarSemDuplicar } from '../lib/previsaoUtil.js';
 import { Empty, ErroComNovaTentativa } from './Panels.jsx';
 import { mensagemParaUsuario } from '../lib/mensagensErro.js';
+import DateInput from './DateInput.jsx';
 
 // Histórico de previsões executadas (GET /predictions). O filtro é pelo dia em que a previsão foi GERADA
 // (created_at), não pela data histórica de referência: uma simulação de setembro feita hoje aparece hoje.
@@ -24,6 +25,8 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
   const [lista, setLista] = useState({ status: 'carregando', itens: [], cursor: null }); // carregando | sucesso | erro
   const [maisCarregando, setMaisCarregando] = useState(false);
   const [erroMais, setErroMais] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
+  const [erroExclusao, setErroExclusao] = useState(null);
   const pedido = useRef(null);
   const [tentativa, setTentativa] = useState(0); // "Tentar novamente" refaz a primeira página
 
@@ -66,6 +69,20 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
     }
   }
 
+  async function excluir(p) {
+    if (!p.predictionId || excluindo) return;
+    setExcluindo(p.predictionId);
+    setErroExclusao(null);
+    try {
+      await excluirPrevisao(p.predictionId);
+      setLista((l) => ({ ...l, itens: l.itens.filter((item) => item.predictionId !== p.predictionId) }));
+    } catch (e) {
+      setErroExclusao(mensagemParaUsuario(e));
+    } finally {
+      setExcluindo(null);
+    }
+  }
+
   function consultar(e) {
     e.preventDefault();
     if (!de || !ate || de > ate) return;
@@ -83,12 +100,12 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
       <form className="acoes" onSubmit={consultar}>
         <div className="campo">
           <label htmlFor="hist-de">Geradas de</label>
-          <input id="hist-de" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)}
+          <DateInput id="hist-de" value={de} max={ate || undefined} label="Geradas de" onChange={setDe}
             aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <div className="campo">
           <label htmlFor="hist-ate">até</label>
-          <input id="hist-ate" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)}
+          <DateInput id="hist-ate" value={ate} min={de || undefined} label="Geradas até" onChange={setAte}
             aria-invalid={invalido} aria-describedby={invalido ? 'hist-erro' : undefined} />
         </div>
         <button type="submit" className="btn" disabled={invalido || carregando}>{carregando ? 'Consultando…' : 'Consultar'}</button>
@@ -106,7 +123,7 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
             <table>
               <caption className="sr">Previsões geradas entre {fmtDataIso(lista.consultado.de)} e {fmtDataIso(lista.consultado.ate)}</caption>
               <thead>
-                <tr><th>Gerada em</th><th>Horário simulado</th><th>Período previsto</th><th>Resultado</th><th>Probabilidade estimada</th></tr>
+                <tr><th>Gerada em</th><th>Horário simulado</th><th>Período previsto</th><th>Resultado</th><th>Probabilidade estimada</th><th aria-label="Ações"></th></tr>
               </thead>
               <tbody>
                 {lista.itens.map((p) => (
@@ -116,6 +133,10 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
                     <td>{fmtJanela(p.forecastStart, p.forecastEnd)}</td>
                     <td>{p.vaiChover ? 'Chuva prevista' : 'Sem chuva prevista'}{p.isMock && <span className="selo selo-mock">fictício</span>}</td>
                     <td>{pct(p.probabilidadePct)}</td>
+                    <td className="celula-excluir"><button type="button" className="btn-lixeira" aria-label="Excluir previsão" title="Excluir previsão"
+                      onClick={() => excluir(p)} disabled={!p.predictionId || excluindo !== null}>
+                      {excluindo === p.predictionId ? '…' : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3" /></svg>}
+                    </button></td>
                   </tr>
                 ))}
               </tbody>
@@ -128,6 +149,7 @@ const HistoricoBusca = forwardRef(function HistoricoBusca({ atualizacao = 0 }, r
           </div>
         )}
         {erroMais && <p className="err" role="alert">Não foi possível carregar mais previsões. {erroMais}</p>}
+        {erroExclusao && <p className="err" role="alert">Não foi possível excluir a previsão. {erroExclusao}</p>}
       </div>
     </section>
   );

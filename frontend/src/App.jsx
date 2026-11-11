@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getForecast } from './services/weatherApi.js';
 import { Empty, ErroComNovaTentativa } from './components/Panels.jsx';
 import DiaPorData from './components/DiaPorData.jsx';
@@ -14,25 +14,60 @@ import { mensagemParaUsuario } from './lib/mensagensErro.js';
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
 const CityMap = lazy(() => import('./components/CityMap.jsx'));
 
-const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Histórico'], ['integracao', 'Previsão']];
+const NAV = [['agora', 'Agora'], ['semana', 'Semana'], ['mapa', 'Mapa'], ['dados', 'Histórico'], ['comparar', 'Comparar dias'], ['integracao', 'Previsão']];
 
 // Duas rotas sem roteador: "/" é o painel (Mapa, Agora, Semana e Dados são seções dele) e "/integracao" é outra tela.
 const RAIZ = import.meta.env.BASE_URL;
 const ROTA_INTEGRACAO = `${RAIZ}integracao`;
 const telaDaUrl = () => (window.location.pathname.replace(/\/+$/, '') === ROTA_INTEGRACAO ? 'integracao' : 'painel');
+const lerTemaSalvo = () => {
+  try {
+    const tema = window.localStorage.getItem('chuva-londrina:tema');
+    return tema === 'claro' || tema === 'escuro' ? tema : null;
+  } catch {
+    return null;
+  }
+};
+const temaDoSistema = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
 
 export default function App() {
   const [menu, setMenu] = useState(false);
+  const [tema, setTema] = useState(() => lerTemaSalvo() ?? temaDoSistema());
   const [state, setState] = useState({ loading: true, data: null, error: null });
   const [tela, setTela] = useState(telaDaUrl);
+  const [painelMontado, setPainelMontado] = useState(() => telaDaUrl() === 'painel');
   const [alvo, setAlvo] = useState(null); // seção para rolar depois da troca de tela
   const [historicoVersao, setHistoricoVersao] = useState(0); // muda a cada previsão salva → histórico recarrega
   const [tentativa, setTentativa] = useState(0); // "Tentar novamente": refaz a consulta do painel
   const historicoRef = useRef(null);
   const irParaHistorico = () => { historicoRef.current?.scrollIntoView(); historicoRef.current?.focus({ preventScroll: true }); };
 
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = tema;
+  }, [tema]);
+
   useEffect(() => {
-    const voltar = () => setTela(telaDaUrl()); // botões voltar/avançar do navegador
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!media) return undefined;
+    const atualizarTemaDoSistema = () => {
+      if (lerTemaSalvo() === null) setTema(media.matches ? 'escuro' : 'claro');
+    };
+    media.addEventListener?.('change', atualizarTemaDoSistema);
+    return () => media.removeEventListener?.('change', atualizarTemaDoSistema);
+  }, []);
+
+  function alternarTema() {
+    const proximo = tema === 'escuro' ? 'claro' : 'escuro';
+    try { window.localStorage.setItem('chuva-londrina:tema', proximo); } catch { /* preferência vale enquanto a página estiver aberta */ }
+    setTema(proximo);
+  }
+
+  useEffect(() => {
+    const voltar = () => {
+      const proximaTela = telaDaUrl();
+      setTela(proximaTela); // botões voltar/avançar do navegador
+      if (proximaTela === 'painel') setPainelMontado(true);
+    };
     window.addEventListener('popstate', voltar);
     return () => window.removeEventListener('popstate', voltar);
   }, []);
@@ -61,6 +96,7 @@ export default function App() {
     const destino = id === 'integracao' ? ROTA_INTEGRACAO : RAIZ;
     if (window.location.pathname !== destino) window.history.pushState(null, '', destino);
     setTela(id === 'integracao' ? 'integracao' : 'painel');
+    if (id !== 'integracao') setPainelMontado(true);
     setAlvo({ id });
   }
 
@@ -104,14 +140,23 @@ export default function App() {
             </svg>
             <span><b>Chuva Londrina</b><small>Monitoramento de chuva</small></span>
           </a>
-          <button className="menu-btn" aria-expanded={menu} aria-controls="nav" onClick={() => setMenu(!menu)}>Menu</button>
           <nav id="nav" className={menu ? 'open' : ''} aria-label="Principal">
             {NAV.map(([id, n]) => <a key={id} href={id === 'integracao' ? ROTA_INTEGRACAO : RAIZ} aria-current={id === tela ? 'page' : undefined} onClick={(e) => irPara(e, id)}>{n}</a>)}
           </nav>
+          <div className="nav-actions">
+            <button className="theme-toggle" type="button" onClick={alternarTema} aria-label={`Ativar modo ${tema === 'escuro' ? 'claro' : 'escuro'}`} aria-pressed={tema === 'escuro'} title={`Ativar modo ${tema === 'escuro' ? 'claro' : 'escuro'}`}>
+              {tema === 'escuro' ? (
+                <svg key={tema} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>
+              ) : (
+                <svg key={tema} viewBox="0 0 24 24" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg>
+              )}
+            </button>
+            <button className="menu-btn" aria-expanded={menu} aria-controls="nav" onClick={() => setMenu(!menu)}>Menu</button>
+          </div>
         </div>
       </header>
 
-      {tela === 'integracao' ? (
+      {tela === 'integracao' && (
       <main className="wrap">
         <h1 ref={tituloRef} tabIndex={-1}>Previsão de chuva</h1>
         <p className="meta">Escolha um dia e um horário do passado e veja se o sistema teria previsto chuva na hora seguinte.</p>
@@ -122,31 +167,39 @@ export default function App() {
           <p className="note">Estas simulações usam dados do passado, inclusive de períodos que o sistema usou para aprender. Elas servem para demonstrar o funcionamento e não medem a precisão real das previsões.</p>
         </div>
       </main>
-      ) : (
-      <main className="wrap">
-        <h1 ref={tituloRef} tabIndex={-1}>Chuva em Londrina: dados mais recentes</h1>
-        <p className="meta">
-          {meta?.updatedAt ? `Dados atualizados até ${fmtDateTime(meta.updatedAt)}`
-            : carregando ? 'Carregando os dados mais recentes…' : 'Data da última atualização indisponível'}
-          {loading && !carregando && ' · atualizando…'}
-        </p>
+      )}
+      {painelMontado && (
+      <main className="wrap dashboard" hidden={tela === 'integracao'}>
+        <div className="page-intro">
+          <div>
+            <p className="eyebrow">MONITORAMENTO METEOROLÓGICO</p>
+            <h1 ref={tituloRef} tabIndex={-1}>Clima em Londrina</h1>
+            <p className="intro-copy">Acompanhe as condições observadas e a chuva na cidade.</p>
+          </div>
+          <p className="meta update-chip">
+            <span className={`update-dot${loading ? ' is-loading' : ''}`} aria-hidden="true" />
+            {meta?.updatedAt ? `Atualizado até ${fmtDateTime(meta.updatedAt)}`
+              : carregando ? 'Carregando dados recentes…' : 'Atualização indisponível'}
+            {loading && !carregando && ' · atualizando'}
+          </p>
+        </div>
         {aviso && !loading && <ErroComNovaTentativa onTentar={tentarDeNovo}>{aviso}</ErroComNovaTentativa>}
 
-        <section id="mapa" aria-labelledby="t-mapa">
-          <div className="card">
-            <h2 id="t-mapa">Mapa de Londrina</h2>
-            <Suspense fallback={<Empty>Carregando mapa…</Empty>}>
-              <CityMap station={data?.station} city={data?.city} at={meta?.updatedAt} loading={carregando} />
-            </Suspense>
-          </div>
-        </section>
-
-        <section id="agora" aria-labelledby="t-agora">
+        <section id="agora" className="today-section" aria-labelledby="t-agora">
           <DiaPorData atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
         </section>
 
-        <section id="semana" aria-labelledby="t-semana">
+        <section id="semana" className="forecast-section" aria-labelledby="t-semana">
           <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} carregandoRecentes={carregando} atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
+        </section>
+
+        <section id="mapa" aria-labelledby="t-mapa">
+          <div className="card map-card">
+            <h2 id="t-mapa">Mapa de Londrina</h2>
+            <Suspense fallback={<Empty>Carregando mapa…</Empty>}>
+              <CityMap station={data?.station} city={data?.city} at={meta?.updatedAt} loading={carregando} visible={tela === 'painel'} />
+            </Suspense>
+          </div>
         </section>
 
         <section id="dados" className="grid2">
