@@ -14,7 +14,7 @@ import { mensagemParaUsuario } from './lib/mensagensErro.js';
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
 const CityMap = lazy(() => import('./components/CityMap.jsx'));
 
-const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Histórico'], ['comparar', 'Comparar dias'], ['integracao', 'Previsão']];
+const NAV = [['agora', 'Agora'], ['semana', 'Semana'], ['mapa', 'Mapa'], ['dados', 'Histórico'], ['comparar', 'Comparar dias'], ['integracao', 'Previsão']];
 
 // Duas rotas sem roteador: "/" é o painel (Mapa, Agora, Semana e Dados são seções dele) e "/integracao" é outra tela.
 const RAIZ = import.meta.env.BASE_URL;
@@ -169,30 +169,37 @@ export default function App() {
       </main>
       )}
       {painelMontado && (
-      <main className="wrap" hidden={tela === 'integracao'}>
-        <h1 ref={tituloRef} tabIndex={-1}>Chuva em Londrina: dados mais recentes</h1>
-        <p className="meta">
-          {meta?.updatedAt ? `Dados atualizados até ${fmtDateTime(meta.updatedAt)}`
-            : carregando ? 'Carregando os dados mais recentes…' : 'Data da última atualização indisponível'}
-          {loading && !carregando && ' · atualizando…'}
-        </p>
+      <main className="wrap dashboard" hidden={tela === 'integracao'}>
+        <div className="page-intro">
+          <div>
+            <p className="eyebrow">MONITORAMENTO METEOROLÓGICO</p>
+            <h1 ref={tituloRef} tabIndex={-1}>Clima em Londrina</h1>
+            <p className="intro-copy">Acompanhe as condições observadas e a chuva na cidade.</p>
+          </div>
+          <p className="meta update-chip">
+            <span className={`update-dot${loading ? ' is-loading' : ''}`} aria-hidden="true" />
+            {meta?.updatedAt ? `Atualizado até ${fmtDateTime(meta.updatedAt)}`
+              : carregando ? 'Carregando dados recentes…' : 'Atualização indisponível'}
+            {loading && !carregando && ' · atualizando'}
+          </p>
+        </div>
         {aviso && !loading && <ErroComNovaTentativa onTentar={tentarDeNovo}>{aviso}</ErroComNovaTentativa>}
 
+        <section id="agora" className="today-section" aria-labelledby="t-agora">
+          <DiaPorData atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
+        </section>
+
+        <section id="semana" className="forecast-section" aria-labelledby="t-semana">
+          <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} carregandoRecentes={carregando} atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
+        </section>
+
         <section id="mapa" aria-labelledby="t-mapa">
-          <div className="card">
+          <div className="card map-card">
             <h2 id="t-mapa">Mapa de Londrina</h2>
             <Suspense fallback={<Empty>Carregando mapa…</Empty>}>
               <CityMap station={data?.station} city={data?.city} at={meta?.updatedAt} loading={carregando} visible={tela === 'painel'} />
             </Suspense>
           </div>
-        </section>
-
-        <section id="agora" aria-labelledby="t-agora">
-          <DiaPorData atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
-        </section>
-
-        <section id="semana" aria-labelledby="t-semana">
-          <SemanaPorData recentes={data?.daily} erroRecentes={errs.days} carregandoRecentes={carregando} atualizacao={tentativa} avisoNoTopo={avisoNoTopo} />
         </section>
 
         <section id="dados" className="grid2">

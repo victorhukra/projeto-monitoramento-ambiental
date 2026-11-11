@@ -58,8 +58,11 @@ function ChartShell({ label, children, className = '' }) {
     const element = container.current;
     if (!element || !suportaIntersectionObserver) return undefined;
     const observer = new IntersectionObserver(([entry]) => {
-      setVisible(entry.isIntersecting && entry.intersectionRatio >= 0.12);
-    }, { threshold: [0, 0.12] });
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.12) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { threshold: [0.12] });
     observer.observe(element);
     return () => observer.disconnect();
   }, [suportaIntersectionObserver]);
@@ -93,8 +96,8 @@ export function RainBars({ data, label = 'Chuva registrada por hora, em milímet
           <CartesianGrid {...grid} />
           <XAxis dataKey="hora" interval={horaTickInterval(rows.length)} tick={tick} tickLine={false} axisLine={axisLine} />
           <YAxis domain={[0, ymax]} tickCount={3} width={42} tick={tick} tickLine={false} axisLine={false} />
-          <Tooltip content={<ChartTooltip formatar={mm} />} cursor={{ fill: chartColors.area }} />
-          <Bar dataKey="mm" name="Chuva" fill={chartColors.bar} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive animationDuration={850} animationEasing="ease-out">
+          <Tooltip content={<ChartTooltip formatar={mm} />} cursor={{ fill: chartColors.area }} animationDuration={180} />
+          <Bar dataKey="mm" name="Chuva" fill={chartColors.bar} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive animationBegin={100} animationDuration={1050} animationEasing="ease-out">
             {rows.map((row) => <Cell key={row.t} fill={row.t === destaque ? chartColors.blue : chartColors.bar} />)}
           </Bar>
         </BarChart>
@@ -119,8 +122,8 @@ export function TempLine({ data, label = 'Temperatura registrada por hora, em gr
           <CartesianGrid {...grid} />
           <XAxis dataKey="hora" interval={horaTickInterval(rows.length)} tick={tick} tickLine={false} axisLine={axisLine} />
           <YAxis domain={[ymin, ymax]} tickCount={3} width={46} tick={tick} tickFormatter={(value) => `${value}°`} tickLine={false} axisLine={false} />
-          <Tooltip content={<ChartTooltip formatar={celsius} />} cursor={{ stroke: chartColors.grid }} />
-          <Area dataKey="tempC" name="Temperatura" type="monotone" stroke={chartColors.blue} strokeWidth={2.5} fill={chartColors.area} fillOpacity={1} dot={false} activeDot={{ r: 5, fill: chartColors.blue, stroke: chartColors.card, strokeWidth: 2 }} isAnimationActive animationDuration={850} animationEasing="ease-out" />
+          <Tooltip content={<ChartTooltip formatar={celsius} />} cursor={{ stroke: chartColors.grid }} animationDuration={180} />
+          <Area dataKey="tempC" name="Temperatura" type="monotone" stroke={chartColors.blue} strokeWidth={2.5} fill={chartColors.area} fillOpacity={1} dot={false} activeDot={{ r: 5, fill: chartColors.blue, stroke: chartColors.card, strokeWidth: 2 }} isAnimationActive animationBegin={140} animationDuration={1250} animationEasing="ease-in-out" />
           {selected && <ReferenceDot x={selected.hora} y={selected.tempC} r={5} fill={chartColors.navy} stroke={chartColors.card} strokeWidth={2} />}
         </AreaChart>
       </ChartShell>
@@ -142,8 +145,8 @@ export function ComparisonBars({ values, formatar, label }) {
         <CartesianGrid {...grid} />
         <XAxis dataKey="label" tick={tick} tickFormatter={(_, index) => `Dia ${index + 1}`} tickLine={false} axisLine={axisLine} interval={0} />
         <YAxis domain={[0, ymax]} tickCount={3} width={42} tick={tick} tickLine={false} axisLine={false} />
-        <Tooltip content={<ChartTooltip formatar={formatar} />} cursor={{ fill: chartColors.area }} />
-        <Bar dataKey="value" name="Valor" fill={chartColors.bar} radius={[4, 4, 0, 0]} maxBarSize={100} isAnimationActive animationDuration={850} animationEasing="ease-out">
+        <Tooltip content={<ChartTooltip formatar={formatar} />} cursor={{ fill: chartColors.area }} animationDuration={180} />
+        <Bar dataKey="value" name="Valor" fill={chartColors.bar} radius={[4, 4, 0, 0]} maxBarSize={100} isAnimationActive animationBegin={100} animationDuration={1050} animationEasing="ease-out">
           {rows.map((row, index) => <Cell key={`${row.label}-${index}`} fill={index === rows.length - 1 ? chartColors.blue : chartColors.bar} />)}
           <LabelList dataKey="value" position="top" formatter={(value) => (value == null ? '' : formatar(value))} className="chart-value-label" />
         </Bar>
