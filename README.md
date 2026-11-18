@@ -243,24 +243,48 @@ Os documentos em `docs/originals/` e `docs/historico/` são materiais de referê
 
 ## Execução local com Docker Compose
 
-Consulte também o [guia de execução dos contêineres](docs/execucao-docker.md).
+O Compose inicia três contêineres: o frontend, o backend e `banco`, que encaminha as consultas do backend para o Supabase. Os dados continuam no Supabase remoto; o frontend o acessa diretamente pelo navegador.
 
-Com Docker e o plugin Docker Compose instalados, copie o arquivo de exemplo na raiz do projeto:
+**1. Prepare o ambiente.** Instale o Docker e o plugin Docker Compose. Na raiz do projeto, crie o arquivo de configuração se ele ainda não existir:
 
 ```bash
 cp .env.example .env
 ```
 
-Preencha `SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` com os dados do projeto Supabase. A chave `anon` é pública e será incorporada ao frontend; a chave `service_role` é secreta e é usada somente pelo backend. O arquivo `.env` não deve ser versionado.
+No `.env` da raiz, preencha os dados do projeto Supabase:
 
-Em seguida, execute na raiz:
+```env
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+VITE_SUPABASE_ANON_KEY=SUA_CHAVE_PUBLICA
+SUPABASE_SERVICE_ROLE_KEY=SUA_CHAVE_SECRETA
+```
+
+Informe a URL sem barra final. A chave `anon` é pública; a `service_role` é secreta e deve permanecer apenas no backend. Não compartilhe nem versione o `.env`. As tabelas, os dados e as permissões precisam existir no Supabase, conforme a seção [Supabase](#supabase).
+
+**2. Confira o modelo.** O arquivo `backend/src/models/weather_ensemble.joblib` não é versionado. Coloque nesse caminho o artefato correspondente ao manifesto `backend/src/models/manifest.json`. Sem ele, o backend inicia, mas não consegue gerar previsões.
+
+**3. Construa e inicie os contêineres.** Na raiz do projeto, execute:
 
 ```bash
 docker compose up --build -d
+docker compose ps
 ```
 
-Acesse o frontend em <http://localhost:5173> e o estado do backend em <http://localhost:8000/health>. Para acompanhar os serviços, use `docker compose logs -f`; para pará-los, use `docker compose down`.
+Os serviços `frontend`, `backend` e `banco` devem aparecer em execução. Na primeira vez, o download das imagens e a instalação das dependências podem levar alguns minutos.
 
-O Compose inicia três contêineres: frontend, backend e `banco`. O contêiner `banco` é um proxy para a API REST do **Supabase remoto** configurado no `.env`; o backend acessa o Supabase através dele. O frontend acessa o Supabase diretamente pelo navegador. As tabelas, dados e permissões precisam existir no projeto remoto, conforme a seção [Supabase](#supabase); nenhum banco PostgreSQL local é criado. Informe a URL sem barra final. As variáveis do frontend são incorporadas durante o build: depois de alterar a URL ou a chave pública, execute novamente `docker compose up --build -d`.
+**4. Verifique a aplicação.**
 
-O arquivo do modelo `backend/src/models/weather_ensemble.joblib` não é versionado. Coloque o artefato correspondente ao manifesto nesse caminho antes do build. Sem ele, o backend inicia, mas o modelo não fica disponível. Após adicioná-lo ou substituí-lo, reconstrua com `docker compose up --build -d backend`. O indicador `integration_ready` em `/health` confirma a configuração dos componentes, mas não substitui uma consulta ao banco.
+1. Abra [http://localhost:8000/health](http://localhost:8000/health) e confira se `model_loaded` e `database_configured` são `true`. Esse endpoint informa a configuração, mas não testa a conexão com o banco.
+2. Abra [http://localhost:8000/available-times](http://localhost:8000/available-times) para testar a consulta ao Supabase. Uma resposta com `min_date` e `max_date` confirma a consulta; valores `null` podem indicar uma tabela vazia.
+3. Abra [http://localhost:5173](http://localhost:5173) e confira se o painel carrega os dados. Para gerar uma previsão, escolha um horário com dados válidos em T e T−1 hora.
+
+**5. Consulte os logs e pare os contêineres.**
+
+```bash
+docker compose logs --tail=100 frontend backend banco
+docker compose down
+```
+
+Para acompanhar os logs em tempo real, use `docker compose logs -f`; `Ctrl+C` interrompe apenas a visualização. Para iniciar novamente, use `docker compose up -d`. Após alterar código, modelo ou `.env`, execute `docker compose up --build -d`; as variáveis do frontend são incorporadas à imagem durante o build.
+
+Consulte também o [guia de execução dos contêineres](docs/execucao-docker.md) para mais detalhes e solução de problemas.
