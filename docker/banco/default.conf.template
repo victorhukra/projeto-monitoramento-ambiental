@@ -1,0 +1,15 @@
+server {
+    listen 80;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    location /rest/v1/ {
+        # Resolve o host do Supabase em tempo de execução e preserva caminho e parâmetros.
+        set $supabase_origin "${SUPABASE_URL}";
+        proxy_pass $supabase_origin$request_uri;
+        proxy_set_header Host $proxy_host;
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 5;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    }
+}

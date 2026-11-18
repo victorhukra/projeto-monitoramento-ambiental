@@ -240,3 +240,27 @@ Os documentos em `docs/originals/` e `docs/historico/` são materiais de referê
 | `/predict` retorna `MISSING_PREVIOUS_HOUR` | Não existe registro meteorológico válido exatamente uma hora antes de T |
 | Não aparecem datas/horários | Verifique a tabela `dataset_weather_goes`, seus registros e os campos obrigatórios |
 | Frontend não carrega dados do painel | `VITE_SUPABASE_URL`, chave pública e políticas RLS |
+
+## Execução local com Docker Compose
+
+Consulte também o [guia de execução dos contêineres](docs/execucao-docker.md).
+
+Com Docker e o plugin Docker Compose instalados, copie o arquivo de exemplo na raiz do projeto:
+
+```bash
+cp .env.example .env
+```
+
+Preencha `SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` com os dados do projeto Supabase. A chave `anon` é pública e será incorporada ao frontend; a chave `service_role` é secreta e é usada somente pelo backend. O arquivo `.env` não deve ser versionado.
+
+Em seguida, execute na raiz:
+
+```bash
+docker compose up --build -d
+```
+
+Acesse o frontend em <http://localhost:5173> e o estado do backend em <http://localhost:8000/health>. Para acompanhar os serviços, use `docker compose logs -f`; para pará-los, use `docker compose down`.
+
+O Compose inicia três contêineres: frontend, backend e `banco`. O contêiner `banco` é um proxy para a API REST do **Supabase remoto** configurado no `.env`; o backend acessa o Supabase através dele. O frontend acessa o Supabase diretamente pelo navegador. As tabelas, dados e permissões precisam existir no projeto remoto, conforme a seção [Supabase](#supabase); nenhum banco PostgreSQL local é criado. Informe a URL sem barra final. As variáveis do frontend são incorporadas durante o build: depois de alterar a URL ou a chave pública, execute novamente `docker compose up --build -d`.
+
+O arquivo do modelo `backend/src/models/weather_ensemble.joblib` não é versionado. Coloque o artefato correspondente ao manifesto nesse caminho antes do build. Sem ele, o backend inicia, mas o modelo não fica disponível. Após adicioná-lo ou substituí-lo, reconstrua com `docker compose up --build -d backend`. O indicador `integration_ready` em `/health` confirma a configuração dos componentes, mas não substitui uma consulta ao banco.

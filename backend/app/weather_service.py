@@ -1,4 +1,5 @@
 """Valida a hora local solicitada e recupera os registros referentes a T e T-1h."""
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -52,7 +53,7 @@ def get_weather_inputs(repository, reference_value):
             if isinstance(value, bool) or value is None:
                 raise ValueError(name)
             values[name] = float(value)
-            if not __import__('math').isfinite(values[name]):
+            if not math.isfinite(values[name]):
                 raise ValueError(name)
     except (TypeError, ValueError) as exc:
         field = str(exc) if str(exc) in values else 'weather'

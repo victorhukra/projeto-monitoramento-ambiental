@@ -1,0 +1,33 @@
+services:
+  banco:
+    image: nginx:1.27-alpine
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:?Defina SUPABASE_URL no arquivo .env}
+      NGINX_ENVSUBST_FILTER: '^SUPABASE_URL$'
+    volumes:
+      - ./docker/banco/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+
+  backend:
+    build: ./backend
+    environment:
+      MODEL_PATH: /app/src/models/weather_ensemble.joblib
+      MODEL_MANIFEST_PATH: /app/src/models/manifest.json
+      SUPABASE_URL: http://banco
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Defina SUPABASE_SERVICE_ROLE_KEY no arquivo .env}
+      FRONTEND_ORIGIN: http://localhost:5173
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - banco
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+        VITE_SUPABASE_URL: ${SUPABASE_URL:?Defina SUPABASE_URL no arquivo .env}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?Defina VITE_SUPABASE_ANON_KEY no arquivo .env}
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - backend
