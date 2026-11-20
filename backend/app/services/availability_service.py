@@ -9,8 +9,8 @@ from datetime import date, datetime, timedelta
 import math
 from zoneinfo import ZoneInfo
 
-from .errors import ServiceError
-from .weather_repository import RepositoryUnavailable
+from ..errors import ServiceError
+from ..models.weather_repository import RepositoryUnavailable
 from .weather_service import FIELDS
 
 TIMEZONE = 'America/Sao_Paulo'
@@ -25,6 +25,7 @@ def _local_naive(value):
     return moment
 
 
+# Aceita apenas medidas numéricas finitas; valores inválidos não habilitam o horário.
 def _number(value):
     if isinstance(value, bool) or value is None:
         return None
@@ -57,8 +58,11 @@ def available_period(repository):
         first, last = repository.time_bounds()
     except RepositoryUnavailable:
         raise ServiceError(503, 'DATABASE_UNAVAILABLE', 'Não foi possível consultar o período disponível.') from None
-    to_date = lambda v: _local_naive(v).date().isoformat() if v else None
-    return {'min_date': to_date(first), 'max_date': to_date(last), 'timezone': TIMEZONE}
+    return {
+        'min_date': _local_naive(first).date().isoformat() if first else None,
+        'max_date': _local_naive(last).date().isoformat() if last else None,
+        'timezone': TIMEZONE,
+    }
 
 
 def available_times(repository, date_value):
@@ -71,6 +75,7 @@ def available_times(repository, date_value):
         rows = repository.rows_between(_db_text(start - timedelta(hours=1)), _db_text(start + timedelta(days=1)))
     except RepositoryUnavailable:
         raise ServiceError(503, 'DATABASE_UNAVAILABLE', 'Não foi possível consultar os horários disponíveis.') from None
+    # Agrupa por horário para detectar registros duplicados antes de listar as opções.
     by_time = defaultdict(list)
     for row in rows or []:
         try:
@@ -78,9 +83,14 @@ def available_times(repository, date_value):
         except (KeyError, TypeError, ValueError):
             continue
     times = []
+    # Cada opção precisa de um registro válido em T e de pressão válida em T−1h.
     for hour in range(24):
         moment = start + timedelta(hours=hour)
-        current, previous = by_time.get(moment, []), by_time.get(moment - timedelta(hours=1), [])
-        if len(current) == 1 and len(previous) == 1 and _valid_t(current[0]) and _valid_previous(previous[0]):
+        current = by_time.get(moment, [])
+        previous = by_time.get(moment - timedelta(hours=1), [])
+        if (
+            len(current) == 1 and len(previous) == 1
+            and _valid_t(current[0]) and _valid_previous(previous[0])
+        ):
             times.append(moment.replace(tzinfo=_TZ).isoformat())
     return {'date': day.isoformat(), 'timezone': TIMEZONE, 'times': times}

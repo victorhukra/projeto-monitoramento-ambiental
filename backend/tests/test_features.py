@@ -1,3 +1,4 @@
+"""Verifica a preparação das variáveis que entram no modelo de previsão."""
 import unittest
 from src.models.weather_ensemble import SimpleMeanCalibratedEnsemble, FEATURES
 

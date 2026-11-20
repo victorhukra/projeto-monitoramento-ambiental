@@ -17,6 +17,7 @@ def load_model(model_path, manifest_path):
         return None
     try:
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        # O hash confirma que o arquivo carregado corresponde ao manifesto.
         digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
         if digest != manifest.get('bundle_sha256'):
             raise ModelLoadError('O hash do modelo não corresponde ao manifesto.')
@@ -26,6 +27,7 @@ def load_model(model_path, manifest_path):
             raise ModelLoadError('A ordem de features do manifesto é incompatível.')
         if tuple(manifest.get('required_weather_inputs', ())) != RAW_FIELDS:
             raise ModelLoadError('As entradas exigidas pelo manifesto são incompatíveis.')
+        # Avisos de incompatibilidade ao carregar o pacote também impedem seu uso.
         with warnings.catch_warnings():
             warnings.simplefilter('error')
             model = joblib.load(model_path)

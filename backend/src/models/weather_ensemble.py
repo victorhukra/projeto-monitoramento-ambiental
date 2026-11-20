@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from config import WEATHER_TIMEZONE
 
+# A ordem das entradas deve coincidir com a usada no treinamento e no manifesto.
 MODEL_VERSION = 'weather-v6-simple-mean-isotonic-v1'
 MODEL_NAMES = ('original', 'balanced', 'balanced_subsample')
 FEATURES = ('temperature_2m','relative_humidity_2m','pressure_msl','cloud_cover','temp_humidity','pressure_diff','hour_of_day')
@@ -22,6 +23,7 @@ class SimpleMeanCalibratedEnsemble:
         if not 0 <= self.threshold <= 1:
             raise ValueError('O limiar deve estar entre 0 e 1.')
 
+    # Prepara as variáveis calculadas no formato esperado pelos modelos treinados.
     @staticmethod
     def prepare_features(weather, reference_time):
         missing = [field for field in RAW_FIELDS if field not in weather]
@@ -48,6 +50,7 @@ class SimpleMeanCalibratedEnsemble:
 
     def predict_one(self, weather, reference_time):
         features = self.prepare_features(weather, reference_time)
+        # Cada modelo gera uma probabilidade, que passa por sua calibração.
         calibrated = {}
         for name in MODEL_NAMES:
             model = self.models[name]
@@ -56,6 +59,7 @@ class SimpleMeanCalibratedEnsemble:
                 raise ValueError(f'O modelo {name} não contém a classe positiva 1.')
             raw = float(model.predict_proba(features)[0, classes.index(1)])
             calibrated[name] = float(np.clip(self.calibrators[name].predict([raw])[0], 0, 1))
+        # Combina as três probabilidades e compara a média com o limiar de decisão.
         probability = float(sum(WEIGHTS[name] * calibrated[name] for name in MODEL_NAMES))
         return {
             'rain_probability': probability,

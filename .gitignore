@@ -18,6 +18,8 @@ data/
 !frontend/src/data/londrina-ibge.json
 artifacts/
 models/
+!backend/app/models/
+!backend/app/models/*.py
 !backend/src/models/
 !backend/src/models/**
 .venv/

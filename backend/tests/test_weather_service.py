@@ -1,7 +1,8 @@
+"""Testa a busca e validação dos registros de T e T−1h."""
 import unittest
 from datetime import datetime
 from app.errors import ServiceError
-from app.weather_service import get_weather_inputs
+from app.services.weather_service import get_weather_inputs
 
 class Repository:
     def __init__(self, rows): self.rows = rows

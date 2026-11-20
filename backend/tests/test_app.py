@@ -1,3 +1,4 @@
+"""Testa as rotas e os estados da aplicação usando dependências simuladas."""
 import unittest
 from app.main import create_app
 from app.settings import Settings

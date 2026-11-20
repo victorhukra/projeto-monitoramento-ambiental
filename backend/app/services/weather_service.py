@@ -3,12 +3,13 @@ import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .errors import ServiceError
-from .weather_repository import RepositoryUnavailable
+from ..errors import ServiceError
+from ..models.weather_repository import RepositoryUnavailable
 
 FIELDS = ('temperature_2m', 'relative_humidity_2m', 'pressure_msl', 'cloud_cover')
 
 
+# Converte para o horário local e exige uma hora cheia com fuso informado.
 def parse_reference_time(value):
     if not value:
         raise ServiceError(422, 'INVALID_REFERENCE_TIME', 'Informe o horário de referência.', 'reference_time')
@@ -28,6 +29,7 @@ def _database_time(local):
     return local.replace(tzinfo=None).isoformat(sep=' ')
 
 
+# Mais de um registro para o mesmo horário tornaria a entrada ambígua.
 def _single_row(repository, local):
     try:
         rows = repository.rows_at(_database_time(local))
@@ -43,11 +45,13 @@ def get_weather_inputs(repository, reference_value):
     current = _single_row(repository, reference)
     if current is None:
         raise ServiceError(404, 'WEATHER_RECORD_NOT_FOUND', 'Não há registro meteorológico para esse horário.', 'reference_time')
+    # O modelo usa a pressão da hora anterior para calcular a variação.
     previous = _single_row(repository, reference - timedelta(hours=1))
     if previous is None:
         raise ServiceError(422, 'MISSING_PREVIOUS_HOUR', 'Falta o registro meteorológico de exatamente T−1h.', 'reference_time')
     values = {field: current.get(field) for field in FIELDS}
     values['pressure_msl_previous_hour'] = previous.get('pressure_msl')
+    # Converte as medidas para números e rejeita valores ausentes ou não finitos.
     try:
         for name, value in values.items():
             if isinstance(value, bool) or value is None:
@@ -58,7 +62,13 @@ def get_weather_inputs(repository, reference_value):
     except (TypeError, ValueError) as exc:
         field = str(exc) if str(exc) in values else 'weather'
         raise ServiceError(422, 'INVALID_WEATHER_INPUT', 'Há uma medida ausente ou inválida no horário selecionado.', field) from None
-    if not 0 <= values['relative_humidity_2m'] <= 100 or not 0 <= values['cloud_cover'] <= 100 or values['pressure_msl'] <= 0 or values['pressure_msl_previous_hour'] <= 0:
+    outside_allowed_range = (
+        not 0 <= values['relative_humidity_2m'] <= 100
+        or not 0 <= values['cloud_cover'] <= 100
+        or values['pressure_msl'] <= 0
+        or values['pressure_msl_previous_hour'] <= 0
+    )
+    if outside_allowed_range:
         raise ServiceError(422, 'INVALID_WEATHER_INPUT', 'Uma medida está fora do intervalo permitido pelo contrato.', 'weather')
     return {'location': 'Londrina-PR', 'mode': 'historical',
             'reference_time': reference.isoformat(),

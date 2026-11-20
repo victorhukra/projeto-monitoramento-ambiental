@@ -1,7 +1,7 @@
 """Executa o modelo v6 carregado utilizando entradas históricas validadas."""
 import logging
 
-from .errors import ServiceError
+from ..errors import ServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 def predict(model, inputs):
     if model is None:
         raise ServiceError(503, 'MODEL_UNAVAILABLE', 'O modelo v6 não está disponível.')
+    # Confere o resultado antes de entregá-lo à API ou gravá-lo no banco.
     try:
         result = model.predict_one(inputs['weather'], inputs['reference_time'])
         probability = float(result['rain_probability'])

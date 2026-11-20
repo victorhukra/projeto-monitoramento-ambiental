@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from uuid import UUID
 
-from .errors import ServiceError
+from ..errors import ServiceError
 
 
 def encode_cursor(row):
@@ -13,6 +13,7 @@ def encode_cursor(row):
     return base64.urlsafe_b64encode(raw).decode().rstrip('=')
 
 
+# Recupera a posição da página e rejeita cursores malformados.
 def decode_cursor(value):
     try:
         stamp, identifier = json.loads(base64.urlsafe_b64decode(value + '=' * (-len(value) % 4)))
@@ -24,6 +25,7 @@ def decode_cursor(value):
         raise ServiceError(422, 'INVALID_CURSOR', 'Cursor de paginação inválido.', 'cursor') from None
 
 
+# Compara instantes com fuso, mesmo quando escritos com offsets diferentes.
 def same_instant(left, right):
     try:
         a = datetime.fromisoformat(left.replace('Z', '+00:00'))

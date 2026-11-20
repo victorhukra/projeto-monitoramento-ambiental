@@ -1,6 +1,7 @@
+"""Verifica o carregamento do modelo configurado e o tratamento de sua ausência."""
 import unittest
-from app.model_service import load_model
-from app.prediction_service import predict
+from app.services.model_service import load_model
+from app.services.prediction_service import predict
 from app.errors import ServiceError
 from app.settings import Settings
 

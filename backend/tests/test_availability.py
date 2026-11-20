@@ -1,3 +1,4 @@
+"""Testa a seleção dos horários disponíveis com registros meteorológicos simulados."""
 import unittest
 from app.main import create_app
 from app.settings import Settings

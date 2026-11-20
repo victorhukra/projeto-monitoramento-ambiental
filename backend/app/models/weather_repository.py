@@ -47,6 +47,7 @@ class WeatherRepository:
 
     def _request(self, table, query, method='GET', payload=None, prefer=None):
         """Executa uma requisição REST e converte falhas em exceções do repositório."""
+        # Monta uma chamada PostgREST; a chave segue apenas nos cabeçalhos.
         url = f'{self.base_url}/rest/v1/{table}?{urlencode(query)}'
         body = json.dumps(payload).encode() if payload is not None else None
 
@@ -67,6 +68,7 @@ class WeatherRepository:
             response_body = error.read().decode(errors='replace')
             error_code = self._error_code(response_body)
 
+            # A restrição única permite reconhecer pedidos concorrentes duplicados.
             if error.code == 409 and error_code == '23505':
                 raise DuplicateRequest from None
 
@@ -174,6 +176,7 @@ class WeatherRepository:
             'select': '*',
             'and': f'(created_at.gte.{start},created_at.lt.{end})',
             'order': 'created_at.desc,prediction_id.desc',
+            # Uma linha extra indica se existe outra página.
             'limit': str(limit + 1),
         }
 

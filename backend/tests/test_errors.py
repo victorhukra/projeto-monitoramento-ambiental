@@ -6,9 +6,9 @@ from urllib.error import HTTPError, URLError
 
 from app.errors import ServiceError
 from app.main import create_app
-from app.prediction_service import predict
+from app.services.prediction_service import predict
 from app.settings import Settings
-from app.weather_repository import RepositoryUnavailable, WeatherRepository
+from app.models.weather_repository import RepositoryUnavailable, WeatherRepository
 
 
 class ExplodingRepository:
@@ -56,7 +56,7 @@ class HttpErrorTests(unittest.TestCase):
         self.assertEqual(response.json['error']['code'], 'DATABASE_UNAVAILABLE')
 
     def test_model_failure_is_logged_and_returns_503(self):
-        with self.assertLogs('app.prediction_service', level='ERROR') as logs:
+        with self.assertLogs('app.services.prediction_service', level='ERROR') as logs:
             with self.assertRaisesRegex(ServiceError, 'MODEL_PREDICTION_FAILED'):
                 predict(BrokenModel(), {'weather': {}, 'reference_time': '2026-09-01T14:00:00-03:00'})
         self.assertIn('ZeroDivisionError', '\n'.join(logs.output))
@@ -75,8 +75,8 @@ class RepositoryLoggingTests(unittest.TestCase):
         self.repo = WeatherRepository('https://exemplo.supabase.co', 'chave-secreta')
 
     def test_connection_failure_is_logged_without_credentials(self):
-        with patch('app.weather_repository.urlopen', side_effect=URLError('timed out')):
-            with self.assertLogs('app.weather_repository', level='ERROR') as logs:
+        with patch('app.models.weather_repository.urlopen', side_effect=URLError('timed out')):
+            with self.assertLogs('app.models.weather_repository', level='ERROR') as logs:
                 with self.assertRaises(RepositoryUnavailable):
                     self.repo.time_bounds()
         output = '\n'.join(logs.output)
@@ -86,8 +86,8 @@ class RepositoryLoggingTests(unittest.TestCase):
     def test_http_error_logs_status_and_postgrest_code(self):
         body = io.BytesIO(b'{"code":"42501","message":"permission denied for table dataset_weather_goes"}')
         error = HTTPError('https://exemplo.supabase.co/rest/v1/x', 401, 'Unauthorized', {}, body)
-        with patch('app.weather_repository.urlopen', side_effect=error):
-            with self.assertLogs('app.weather_repository', level='ERROR') as logs:
+        with patch('app.models.weather_repository.urlopen', side_effect=error):
+            with self.assertLogs('app.models.weather_repository', level='ERROR') as logs:
                 with self.assertRaises(RepositoryUnavailable):
                     self.repo.rows_at('2026-09-01 14:00:00')
         output = '\n'.join(logs.output)
