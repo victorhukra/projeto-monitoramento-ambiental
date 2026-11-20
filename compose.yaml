@@ -1,5 +1,5 @@
 services:
-  banco:
+  supabase_proxy:
     image: nginx:1.27-alpine
     environment:
       SUPABASE_URL: ${SUPABASE_URL:?Defina SUPABASE_URL no arquivo .env}
@@ -7,18 +7,40 @@ services:
     volumes:
       - ./docker/banco/default.conf.template:/etc/nginx/templates/default.conf.template:ro
 
+  banco:
+    image: postgres:15
+    container_name: postgres_monitoramento_londrina
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-projeto_integrador}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres123}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./banco/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-projeto_integrador}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   backend:
     build: ./backend
     environment:
       MODEL_PATH: /app/src/models/weather_ensemble.joblib
       MODEL_MANIFEST_PATH: /app/src/models/manifest.json
-      SUPABASE_URL: http://banco
+      SUPABASE_URL: http://supabase_proxy
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Defina SUPABASE_SERVICE_ROLE_KEY no arquivo .env}
       FRONTEND_ORIGIN: http://localhost:5173
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      - banco
+      supabase_proxy:
+        condition: service_started
+      banco:
+        condition: service_healthy
 
   frontend:
     build:
@@ -31,3 +53,6 @@ services:
       - "127.0.0.1:5173:80"
     depends_on:
       - backend
+
+volumes:
+  postgres_data:

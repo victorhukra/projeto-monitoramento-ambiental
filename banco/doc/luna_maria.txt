@@ -1,0 +1,28 @@
+NOME COMPLETO: Luna Maria
+PROJETO: Monitoramento Ambiental com Imagens de Satélite (Londrina-PR)
+MÓDULO / GRUPO: Banco de Dados
+
+1. RESPONSABILIDADES ASSUMIDAS
+Colaboração na documentação inicial do módulo de Banco de Dados, catalogação do Dicionário de Dados das variáveis meteorológicas e apoio na formatação dos relatórios das primeiras etapas.
+
+2. CONTRIBUIÇÕES REALIZADAS
+- Elaboração do Dicionário de Dados descrevendo o significado físico e a unidade de medida de cada coluna da tabela dataset_weather_goes (°C, %, hPa, m/s, mm) e caracteristicas_goes_stat;
+- Apoio na redação e organização dos documentos de planejamento inicial (Etapa 1) e relatório da Etapa 4;
+- Revisão textual das descrições das tabelas e apoio na preparação do material de apresentação da equipe.
+
+3. ARQUIVOS E TRECHOS DE CÓDIGO
+- 01_Modelagem_e_DER/DER_Especificacao_Tecnica.md: Tabelas descritivas do Dicionário de Dados e explicação das variáveis meteorológicas de Londrina.
+- 04_Relatorios_e_Entregas/Relatorio_Tecnico_Etapa4_Integracao_Front_DB.md: Apoio na documentação da estrutura das tabelas e visão geral do banco.
+
+4. INTEGRAÇÃO COM OUTROS MÓDULOS
+O Dicionário de Dados auxiliou as demais equipes na identificação correta dos nomes das colunas e unidades de medida armazenadas no banco.
+
+5. TESTES REALIZADOS
+- Conferência entre as colunas listadas no Dicionário de Dados e a estrutura exibida pelo comando \d no PostgreSQL;
+- Testes de visualização da View clima_atual e das tabelas via terminal psql.
+
+6. DIFICULDADES E SOLUÇÕES
+- Dificuldade: Padronizar a documentação das unidades de medida meteorológicas para fácil entendimento de todos os grupos. Solução: Organização em tabelas Markdown detalhando coluna, tipo SQL e unidade física.
+
+7. REFERÊNCIAS ÀS CONTRIBUIÇÕES
+Contribuições concentradas na documentação de dicionário de dados e relatórios das etapas iniciais em 01_Modelagem_e_DER/ e 04_Relatorios_e_Entregas/.
