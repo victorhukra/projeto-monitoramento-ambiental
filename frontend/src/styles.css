@@ -513,3 +513,19 @@ button, .link { transition: transform 180ms var(--ease-out), box-shadow 200ms va
 @media (prefers-reduced-motion: reduce) {
   .theme-toggle svg { animation: none; }
 }
+
+/* Imagem GOES integrada à consulta histórica */
+.goes-image {
+  margin-top: 16px;
+}
+
+.goes-image-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 680px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}

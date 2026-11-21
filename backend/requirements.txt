@@ -4,3 +4,7 @@ pandas==3.0.1
 scikit-learn==1.9.1
 joblib==1.6.0
 tzdata==2026.5
+xarray
+h5netcdf
+Pillow
+h5py

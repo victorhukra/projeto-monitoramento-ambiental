@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import GoesImage from './GoesImage.jsx';
 import { buscarEntradas, buscarHorarios, buscarPeriodo, corpoPrevisao, gerarPrevisao } from '../services/previsaoApi.js';
 import { fmtDataHoraCurta, fmtDataIso, fmtHoraMin, fmtJanela } from '../lib/format.js';
 import { lerPendente, limparPendente, salvarPendente } from '../lib/pedidoPendente.js';
@@ -189,10 +190,18 @@ export default function PrevisaoExperimental({ onPrevisaoSalva, onConsultarHisto
         {entradas.status === 'carregando' && <Empty>Buscando as medidas de {fmtDataHoraCurta(entradas.referenceTime)}…</Empty>}
         {entradas.status === 'erro' && <p className="err" role="alert">Não foi possível buscar os dados. {entradas.mensagem}</p>}
         {entradasValidas && (
-          <div className="entradas">
-            <h3 className="subtitulo">Medições deste horário</h3>
-            <TabelaMedidas weather={entradas.dados.weather} referenceTime={entradas.dados.referenceTime} previousReferenceTime={entradas.dados.previousReferenceTime} />
-          </div>
+              <>
+              <div className="entradas">
+                <h3 className="subtitulo">Medições deste horário</h3>
+                <TabelaMedidas
+                  weather={entradas.dados.weather}
+                  referenceTime={entradas.dados.referenceTime}
+                  previousReferenceTime={entradas.dados.previousReferenceTime}
+                />
+              </div>
+
+              <GoesImage referenceTime={entradas.dados.referenceTime} />
+              </>
         )}
       </div>
 

@@ -33,7 +33,7 @@ vi.mock('./services/forecastRepo.js', async () => {
 });
 const { default: App } = await import('./App.jsx');
 
-const ready = () => screen.findByText(/Dados atualizados até qua\., 30 de set\., 23:00/);
+const ready = () => screen.findByText(/Atualizado até qua\., 30 de set\., 23:00/);
 
 describe('App (dados do banco)', () => {
   it('carrega sob StrictMode e encerra o "atualizando…"', async () => {
@@ -181,7 +181,7 @@ describe('App (dados do banco)', () => {
     expect(footer.textContent).toContain('Mapa: © OpenStreetMap');
     const main = screen.getByRole('main');
     expect(main.textContent).not.toMatch(/Fonte/);
-    expect(main.querySelector('.meta').textContent).toContain('Dados atualizados até qua., 30 de set., 23:00');
+    expect(main.querySelector('.meta').textContent).toContain('Atualizado até qua., 30 de set., 23:00');
   });
   it('comparar dois dias: campos na ordem Ano → Mês → Dia e diferença em frase', async () => {
     render(<App />);

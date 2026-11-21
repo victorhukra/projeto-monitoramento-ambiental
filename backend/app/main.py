@@ -1,11 +1,13 @@
 """Cria a aplicação Flask e configura suas dependências e tratamento de erros."""
 import logging
+from datetime import datetime
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from werkzeug.exceptions import HTTPException
 
 from .controllers.routes import register_routes
 from .errors import ServiceError
+from .goes_service import get_goes_png, GoesImageError
 from .services.model_service import ModelLoadError, load_model
 from .settings import Settings
 from .models.weather_repository import WeatherRepository
@@ -90,8 +92,37 @@ def create_app(settings=None, repository=None, model=None):
     def handle_unexpected(error):
         logger.exception('Erro inesperado em %s %s', request.method, request.path)
         return (jsonify(INTERNAL_ERROR), 500)
-    return app
 
+    @app.get('/goes-image')
+    def goes_image():
+        raw = request.args.get('reference_time', '')
+        try:
+            t = datetime.fromisoformat(raw)
+            if t.tzinfo is None:
+                raise ValueError
+        except ValueError:
+            return jsonify(error={
+                'code': 'INVALID_REFERENCE_TIME',
+                'message': 'reference_time inválido.'
+            }), 422
+
+        try:
+            path = get_goes_png(t)
+        except GoesImageError as e:
+            return jsonify(error={
+                'code': 'GOES_NOT_FOUND',
+                'message': str(e)
+            }), 404
+        except Exception:
+            logger.exception('Falha ao obter imagem GOES')
+            return jsonify(error={
+                'code': 'GOES_UNAVAILABLE',
+                'message': 'Não foi possível obter a imagem GOES.'
+            }), 503
+
+        return send_file(path, mimetype='image/png', max_age=86400)
+
+    return app
 
 # Instância usada pelo servidor para iniciar a API.
 app = create_app()
