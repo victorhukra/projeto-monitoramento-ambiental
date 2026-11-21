@@ -13,6 +13,9 @@ class ModelLoadError(RuntimeError):
 
 
 def load_model(model_path, manifest_path):
+    """Fica responsável por carregar e validar o modelo v6 durante a inicialização do Backend, 
+    conferindo o manifesto, o hash, a versão e as entradas esperadas."""
+    
     if not model_path or not manifest_path:
         return None
     try:
