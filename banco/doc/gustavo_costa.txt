@@ -1,0 +1,42 @@
+NOME COMPLETO: Gustavo Costa
+PROJETO: Monitoramento Ambiental com Imagens de Satélite (Londrina-PR)
+MÓDULO / GRUPO: Banco de Dados (Líder Técnico e Arquitetura)
+
+1. RESPONSABILIDADES ASSUMIDAS
+Liderança técnica integral do módulo de Banco de Dados, sendo responsável direto pela arquitetura, administração do banco em nuvem (Supabase PostgreSQL 15), conteinerização completa em Docker (PostgreSQL 15), integração técnica com as equipes de Backend/IA e Frontend, segurança RLS, otimização de performance e validação automatizada do sistema.
+
+2. CONTRIBUIÇÕES REALIZADAS
+- Concepção e implementação da arquitetura híbrida (dados tabulares relacionais no PostgreSQL e vínculo com matrizes GOES-16 via image_link);
+- Desenvolvimento e manutenção do schema final integrado (banco/init/01_schema.sql) e migrações de evolução do projeto;
+- Reestruturação completa da tabela resultados_previsoes_ia (22 colunas) para atender ao contrato do modelo de IA v6 (weather-v6-simple-mean-isotonic-v1);
+- Implementação da garantia física de idempotência no banco (request_id UUID NOT NULL UNIQUE) e especificação técnica do isolamento por sessão (session_id);
+- Desenvolvimento da query de alta performance para o Backend (junção temporal T e T-1h com cálculo de diferencial barométrico) e criação do índice B-Tree exclusivo idx_weather_goes_time_unique (< 1.5 ms);
+- Configuração das políticas de Row Level Security (RLS), isolando a gravação/leitura de previsões para a credencial service_role do Backend e liberando leitura da série climática para o Frontend;
+- Engenharia da carga automatizada no Docker (banco/init/02_dados.sql e compose.yaml) populando automaticamente o banco com amostra representativa real de 792 horas de Londrina (respeitando o limite de 1 MB do repositório) e script auxiliar (banco/scripts/importar_dataset_completo.sql) para ingestão das 59.160 horas via CSV externo;
+- Criação da suíte automatizada de 7 testes de integridade em PL/pgSQL (07_validacao_geral_sistema.sql).
+
+3. ARQUIVOS E TRECHOS DE CÓDIGO
+- banco/init/01_schema.sql: Criação condicional de roles, DDL completo das 3 tabelas, constraints, 6 índices B-Tree, View clima_atual e políticas RLS.
+- banco/init/02_dados.sql: Carga automática inicial com 792 medições horárias reais de Londrina (Setembro/2026, 2024-01-15, 2020-09-30 e 2020-01-01), estatísticas GOES-16 e 3 previsões de exemplo.
+- banco/scripts/importar_dataset_completo.sql: Script COPY com staging table temporária (tmp_weather_csv) para importação opcional das 59.160 horas completas a partir do CSV externo.
+- compose.yaml e .env.example: Configuração integrada do serviço PostgreSQL 15 (banco) junto ao Backend e Frontend, com healthcheck (pg_isready) e volume persistente (postgres_data).
+- 02_Scripts_SQL/05_consulta_entradas_previsao_t_t1.sql: Self-join temporal indexado entre T e T-1h para alimentar o modelo v6.
+- 02_Scripts_SQL/06_schema_previsoes_e_restricoes_integracao.sql: Definição da tabela de previsões, restrições e permissões do Backend.
+- 02_Scripts_SQL/07_validacao_geral_sistema.sql: Script automatizado de validação ponta a ponta do banco.
+- 03_Integracao_e_APIs/models.py, contrato_integracao_v6_backend.md e especificacao_session_id.md: Mapeamento ORM/Pydantic e especificações técnicas fornecidas ao Backend e Frontend.
+
+4. INTEGRAÇÃO COM OUTROS MÓDULOS
+Atuei diretamente como ponto focal de integração com os líderes de Backend (Victor Hugo) e Frontend (João Victor), definindo as queries de consumo dos gráficos, a consulta de entradas da IA (T e T-1h), as credenciais de acesso e as regras de persistência e exclusão do histórico de previsões.
+
+5. TESTES REALIZADOS
+- Execução da bateria automatizada de 7 testes (07_validacao_geral_sistema.sql): 100% de aprovação na contagem de 59.160 registros únicos, índices ativos, query do Backend, constraints NOT NULL/UNIQUE, bloqueio RLS e ciclo de inserção/rejeição de duplicata/limpeza;
+- Auditoria de performance com EXPLAIN ANALYZE comprovando Index Scan em 1.471 ms;
+- Testes completos de inicialização, população automática e persistência de volume no Docker.
+
+6. DIFICULDADES E SOLUÇÕES
+- Dificuldade 1: Adequar o banco às mudanças de contrato do modelo de IA v6 mantendo zero impacto no Frontend. Solução: Refatoração da tabela resultados_previsoes_ia para 22 colunas com FKs opcionais e isolamento via RLS.
+- Dificuldade 2: Disponibilizar dados reais automaticamente no Docker sem violar a política de proteção de datasets e limite de 1 MB do hook pre-commit (scripts/check_staged.py). Solução: Criação de carga SQL pura de 146 KB (792 horas representativas reais) em banco/init/02_dados.sql e script separado para carga integral do CSV externo.
+- Dificuldade 3: Compatibilizar as roles do Supabase (anon, service_role) com a imagem limpa postgres:15 do Docker. Solução: Criação condicional das roles em bloco DO $$ na inicialização.
+
+7. REFERÊNCIAS ÀS CONTRIBUIÇÕES
+Responsável técnico pela consolidação de todos os scripts finais em banco/init/, configurações Docker e documentação de integração do repositório.

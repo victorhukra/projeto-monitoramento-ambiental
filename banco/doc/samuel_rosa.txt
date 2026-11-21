@@ -1,0 +1,30 @@
+NOME COMPLETO: Samuel Rosa
+PROJETO: Monitoramento Ambiental com Imagens de Satélite (Londrina-PR)
+MÓDULO / GRUPO: Banco de Dados
+
+1. RESPONSABILIDADES ASSUMIDAS
+Colaboração nas etapas iniciais e intermediárias com foco na escrita de consultas SQL exploratórias (DML), filtros de séries históricas e apoio na criação de views de consulta para o painel.
+
+2. CONTRIBUIÇÕES REALIZADAS
+- Desenvolvimento de consultas SQL iniciais para exploração dos dados climáticos de Londrina (busca das últimas 24 horas, recordes de precipitação e temperaturas extremas);
+- Apoio na definição da View clima_atual para retornar a medição mais recente da estação com nomes de colunas legíveis;
+- Auxílio nos testes de consultas agregadas por mês (médias de temperatura e chuva acumulada) utilizadas nos gráficos exploratórios;
+- Execução de testes de consulta e contagem de registros no container Docker.
+
+3. ARQUIVOS E TRECHOS DE CÓDIGO
+- 02_Scripts_SQL/02_consultas_oficiais.sql: Consultas SELECT com ordenação (ORDER BY time DESC LIMIT 24) e filtros de eventos chuvosos (WHERE precipitation > 0).
+- 02_Scripts_SQL/04_consultas_eda_dinamico.sql: Apoio nas queries de agrupamento mensal (GROUP BY) para análise sazonal de Londrina.
+- banco/init/01_schema.sql (seção de Views): Apoio na query da View clima_atual.
+
+4. INTEGRAÇÃO COM OUTROS MÓDULOS
+As consultas exploratórias e a View clima_atual apoiam o fornecimento dos indicadores climáticos exibidos nos cartões de resumo do Frontend.
+
+5. TESTES REALIZADOS
+- Execução de SELECT * FROM clima_atual e SELECT count(*) FROM dataset_weather_goes no terminal interativo psql do container Docker;
+- Verificação dos resultados de médias térmicas e totais de precipitação de Londrina.
+
+6. DIFICULDADES E SOLUÇÕES
+- Dificuldade: Simplificar o retorno dos dados mais recentes para exibição direta nos cartões do painel. Solução: Encapsulamento do SELECT ordenado por data decrescente (LIMIT 1) dentro da View clima_atual.
+
+7. REFERÊNCIAS ÀS CONTRIBUIÇÕES
+Contribuições concentradas nos scripts de consultas analíticas iniciais (02_consultas_oficiais.sql) e validação de views.

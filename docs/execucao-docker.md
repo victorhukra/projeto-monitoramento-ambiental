@@ -4,9 +4,9 @@ Este guia executa o projeto no computador usando Docker Compose. Ele cria três 
 
 - **frontend**: disponibiliza a interface em `http://localhost:5173`;
 - **backend**: disponibiliza a API em `http://localhost:8000`;
-- **banco**: encaminha as requisições do backend para a API REST do Supabase.
+- **banco**: executa o servidor **PostgreSQL 15** local (`127.0.0.1:5432`) com volume persistente (`postgres_data`), criando e populando automaticamente as tabelas (`dataset_weather_goes`, `caracteristicas_goes_stat`, `resultados_previsoes_ia`), índices e a View `clima_atual` a partir de `banco/init/`.
 
-O banco de dados e seus registros continuam no Supabase. O contêiner `banco` é um intermediário; ele não cria uma cópia local do banco. O frontend acessa o Supabase diretamente pelo navegador.
+Para acesso rápido ao banco local via terminal (`psql`), consulte também [`banco/COMANDOS_DOCKER_AVALIACAO.md`](../banco/COMANDOS_DOCKER_AVALIACAO.md). O backend e o frontend continuam conectados ao Supabase via variáveis de ambiente no `.env`.
 
 ## 1. Pré-requisitos
 

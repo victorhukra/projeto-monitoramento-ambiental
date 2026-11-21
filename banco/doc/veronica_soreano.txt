@@ -1,0 +1,29 @@
+NOME COMPLETO: Verônica Soreano
+PROJETO: Monitoramento Ambiental com Imagens de Satélite (Londrina-PR)
+MÓDULO / GRUPO: Banco de Dados
+
+1. RESPONSABILIDADES ASSUMIDAS
+Colaboração nas etapas iniciais de planejamento e modelagem conceitual/lógica do banco de dados, auxiliando na definição das colunas meteorológicas base e na revisão dos tipos de dados das tabelas iniciais.
+
+2. CONTRIBUIÇÕES REALIZADAS
+- Participação no levantamento inicial de requisitos de armazenamento das variáveis climáticas de Londrina (temperatura, umidade, pressão, cobertura de nuvens, vento e precipitação);
+- Apoio na escrita da primeira versão do DDL das tabelas dataset_weather_goes e caracteristicas_goes_stat (Etapas 1 a 4);
+- Auxílio na elaboração inicial do Diagrama Entidade-Relacionamento (DER) no dbdiagram.io;
+- Acompanhamento e validação das tabelas criadas no ambiente Docker para demonstração.
+
+3. ARQUIVOS E TRECHOS DE CÓDIGO
+- 02_Scripts_SQL/01_schema_ddl.sql (versão inicial): Apoio na definição das colunas e tipos numéricos (NUMERIC(5,2), NUMERIC(6,2), TIMESTAMP) da tabela dataset_weather_goes e da tabela caracteristicas_goes_stat.
+- 01_Modelagem_e_DER/DER_Diagrama.dbml: Apoio na estruturação inicial das entidades e relacionamentos.
+
+4. INTEGRAÇÃO COM OUTROS MÓDULOS
+A tabela base dataset_weather_goes definida na modelagem inicial serve como fonte de dados históricos para as consultas de exibição de gráficos no painel do Frontend.
+
+5. TESTES REALIZADOS
+- Conferência da criação das tabelas no PostgreSQL via comando \dt e inspeção das colunas via \d dataset_weather_goes;
+- Execução de consultas SELECT simples para verificar os registros meteorológicos de Londrina.
+
+6. DIFICULDADES E SOLUÇÕES
+- Dificuldade: Definir a precisão numérica adequada para variáveis com diferentes escalas (como pressão em hPa vs temperatura em °C). Solução: Uso de NUMERIC(6,2) para pressão ao nível do mar e NUMERIC(5,2) para temperatura e umidade.
+
+7. REFERÊNCIAS ÀS CONTRIBUIÇÕES
+Contribuições concentradas no planejamento inicial (Etapa 1) e modelagem base das tabelas meteorológicas (Etapas 2 a 4).
