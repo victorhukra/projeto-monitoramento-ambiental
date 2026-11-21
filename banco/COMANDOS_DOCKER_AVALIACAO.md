@@ -82,6 +82,8 @@ FROM resultados_previsoes_ia;
 SELECT * FROM clima_atual;
 ```
 > **Dica de Ouro do `psql`:** Se em algum momento você fizer um `SELECT *` em uma tabela com muitas colunas e a tabela ficar "quebrada/torta" no terminal, basta digitar **`\x`** e apertar Enter! O `\x` ativa o *Modo Cartão Vertical* (mostra uma coluna embaixo da outra, super organizado). Digite `\x` de novo para voltar ao normal.
+
+**6. Mostrar a junção temporal que alimenta a IA (Horário T e T-1h com `EXPLAIN ANALYZE`):**
 ```sql
 SELECT 
     t.time, 

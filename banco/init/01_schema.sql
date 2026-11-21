@@ -88,7 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_caract_goes_weather_id
 
 -- ----------------------------------------------------------------------------
 -- 3. TABELA DE PREDIÇÕES DA IA: resultados_previsoes_ia
--- Persistência oficial das inferências do modelo v6 (22 colunas tipadas).
+-- Persistência oficial das inferências do modelo v6 (23 colunas tipadas).
 -- Possui idempotência nativa via 'request_id UUID NOT NULL UNIQUE' para evitar
 -- duplicação em requisições simultâneas ou cliques duplos.
 -- ----------------------------------------------------------------------------

@@ -243,7 +243,7 @@ Os documentos em `docs/originals/` e `docs/historico/` são materiais de referê
 
 ## Execução local com Docker Compose
 
-O Compose inicia três contêineres: o frontend, o backend e `banco`, que encaminha as consultas do backend para o Supabase. Os dados continuam no Supabase remoto; o frontend o acessa diretamente pelo navegador.
+O Compose inicia três contêineres: o `frontend`, o `backend` e o `banco` (**PostgreSQL 15** local na porta `5432`, com volume persistente `postgres_data` e criação/população automática via `banco/init/`). O backend e o frontend continuam conectados ao Supabase remoto via variáveis do `.env`; para demonstração e avaliação do banco local via `psql`, consulte [`banco/COMANDOS_DOCKER_AVALIACAO.md`](banco/COMANDOS_DOCKER_AVALIACAO.md).
 
 **1. Prepare o ambiente.** Instale o Docker e o plugin Docker Compose. Na raiz do projeto, crie o arquivo de configuração se ele ainda não existir:
 
