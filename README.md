@@ -191,7 +191,6 @@ O modelo precisa ser entregue separadamente como:
 - `weather_ensemble.joblib`
 - `manifest.json`
 
-Mantenha os arquivos fora do repositório, por exemplo em `C:/dados-monitoramento/model/`, e informe os caminhos absolutos em `backend/.env`. O Backend verifica o manifesto e carrega o modelo uma vez durante a inicialização.
 
 O modelo utiliza quatro medidas em T — temperatura, umidade relativa, pressão e cobertura de nuvens — e a pressão de exatamente T−1h. O Backend calcula as features derivadas exigidas pela v6. Não é necessário enviar as sete features pelo Frontend e não ocorre treinamento a cada clique.
 
@@ -218,17 +217,9 @@ Também envia o cabeçalho `Idempotency-Key` com um UUID. A chave deve ser manti
 
 O histórico usa `GET /predictions` com `created_from`, `created_to`, `limit` e, quando necessário, `cursor`. O intervalo de datas considera o momento em que a previsão foi **gerada**, não o horário histórico escolhido como referência.
 
-## 8. Documentação complementar
 
-- [Alinhamento das três equipes](docs/integration/alinhamento_tres_equipes_integracao.md)
-- [Demandas ao Frontend — busca histórica e previsão](docs/integration/demandas_frontend_busca_e_previsao.md)
-- [Demandas ao Banco — busca histórica e previsão](docs/integration/demandas_banco_busca_e_previsao.md)
-- [Continuidade, origem dos arquivos e pendências](docs/continuidade.md)
-- [Histórico e referências do projeto](docs/historico/README.md)
 
-Os documentos em `docs/originals/` e `docs/historico/` são materiais de referência e registro; não substituem as instruções de execução deste README.
-
-## 9. Problemas comuns
+## 8. Problemas comuns
 
 | Problema | O que conferir |
 |---|---|
