@@ -1,0 +1,26 @@
+NOME COMPLETO:
+PROJETO: Monitoramento ambiental — Londrina
+MÓDULO / GRUPO: Processamento Python
+
+1. RESPONSABILIDADES ASSUMIDAS
+Preencher com as atividades efetivamente realizadas por cada desenvolvedor.
+
+2. CONTRIBUIÇÕES REALIZADAS
+Descrever alterações no serviço de inferência, validação do modelo ou testes.
+
+3. ARQUIVOS E TRECHOS DE CÓDIGO
+Indicar arquivos, funções e componentes alterados.
+
+4. INTEGRAÇÃO COM OUTROS MÓDULOS
+Descrever a chamada interna do Backend para o serviço de processamento.
+
+5. TESTES REALIZADOS
+Registrar comandos executados, entradas e resultados observados.
+
+6. DIFICULDADES E SOLUÇÕES
+Preencher com fatos da contribuição individual.
+
+7. REFERÊNCIAS ÀS CONTRIBUIÇÕES
+Incluir commits ou pull requests, quando disponíveis.
+
+IMPORTANTE: cada integrante que contribuir com este módulo deve criar seu próprio arquivo .txt, com nome e relato verdadeiros. Este arquivo é apenas um modelo e não substitui os relatos individuais.
