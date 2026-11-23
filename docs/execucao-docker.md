@@ -1,24 +1,24 @@
-# Execução dos containers com Docker Compose
+# Execução local com Docker Compose
 
-Este guia descreve a execução local da versão integrada de 23/11/2026. O Compose declara quatro serviços: interface `frontend`, API `backend`, serviço Python `processamento` e PostgreSQL local `banco`.
+Este guia descreve como configurar e executar localmente a aplicação. O Compose inicia a interface `frontend`, a API `backend`, o serviço Python `processamento` e o PostgreSQL `banco`.
 
-| Serviço | Endereço/porta no host | Observação |
+| Serviço | Endereço no host | Observação |
 |---|---|---|
-| Frontend | http://localhost:5173 | Aplicação React/Vite servida pelo container. |
-| Backend | http://localhost:8000 | API Flask; `/health` verifica o estado da API. |
+| Frontend | http://localhost:5173 | Aplicação React/Vite. |
+| Backend | http://localhost:8000 | API Flask; `/health` informa o estado da API. |
 | Processamento | Não publicado; porta interna 8100 | Acessível ao Backend pelo nome `processamento`. |
-| Banco | `127.0.0.1:5432` | PostgreSQL 15, volume `postgres_data` e carga inicial local. |
+| Banco | `127.0.0.1:5432` | PostgreSQL 15, volume persistente e carga inicial local. |
 
-> O PostgreSQL local inicializado pelo Compose não é sincronizado com o Supabase. Nesta versão, o Backend consulta e grava os dados da aplicação no Supabase; o serviço PostgreSQL local demonstra o schema, os dados iniciais e a persistência local.
+O Backend e a interface usam o Supabase configurado para a aplicação. O PostgreSQL local é um banco separado, inicializado com schema e dados de exemplo; não é sincronizado com o Supabase nem usado pelo fluxo atual da aplicação.
 
 ## Pré-requisitos
 
-- Docker instalado e em execução, com plugin Docker Compose.
-- Acesso autorizado ao projeto Supabase da equipe, tabelas e permissões configuradas.
-- `weather_ensemble.joblib` e `manifest.json` compatíveis, obtidos com a equipe responsável pelo modelo.
+- Docker instalado e em execução, com Docker Compose v2.
+- Acesso autorizado ao projeto Supabase, às tabelas e às permissões necessárias.
+- Os artefatos compatíveis `weather_ensemble.joblib` e `manifest.json`.
 - Portas 5173, 8000 e 5432 disponíveis.
 
-O Dockerfile de `processamento` copia o modelo de `backend/src/models/` no build. Confirme que os dois arquivos estão nesse diretório antes de subir o Compose. Eles não devem ser considerados disponíveis apenas por clonar o repositório.
+Antes de construir as imagens, coloque os artefatos em `backend/src/models/`. O Dockerfile de processamento copia os arquivos desse diretório; sem ambos, o build não será concluído.
 
 ## Configurar variáveis
 
@@ -34,7 +34,7 @@ No Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-Edite `.env` e configure as credenciais do Supabase:
+Edite `.env` e informe as credenciais válidas:
 
 ```dotenv
 SUPABASE_URL=https://seu-projeto.supabase.co
@@ -42,7 +42,7 @@ SUPABASE_SERVICE_ROLE_KEY=sua_chave_secreta
 VITE_SUPABASE_ANON_KEY=sua_chave_publica
 ```
 
-Confirme também que `VITE_SUPABASE_URL` existente no exemplo corresponde ao projeto configurado. A chave `service_role` é secreta e deve ficar somente no Backend. A chave pública é usada pelo Frontend; suas consultas dependem de políticas RLS. Não versione nem compartilhe `.env` ou credenciais.
+Confirme também que `VITE_SUPABASE_URL` corresponde ao projeto. A chave `SUPABASE_SERVICE_ROLE_KEY` é secreta e deve ficar somente no Backend. A chave pública usada pelo Frontend deve seguir as políticas RLS do Supabase. Não versionize nem compartilhe o `.env`.
 
 ## Construir, iniciar e verificar
 
@@ -53,23 +53,23 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Na primeira execução, Docker baixa imagens e constrói os módulos. Confira os logs:
+Na primeira execução, Docker baixa as imagens e constrói os módulos. Consulte os logs:
 
 ```bash
 docker compose logs --tail=100 banco processamento backend frontend
 ```
 
-Verifique a API em http://localhost:8000/health e acesse a interface em http://localhost:5173. Um status de container em execução não confirma sozinho que modelo, Supabase e fluxo estão prontos. Confirme as informações de saúde, consulte horários, execute uma previsão histórica e verifique o resultado no histórico. O serviço de processamento não tem porta publicada para o host.
+Verifique a API em http://localhost:8000/health e acesse a interface em http://localhost:5173. O serviço de processamento não publica uma porta no host; o Backend acessa `http://processamento:8100` dentro da rede Docker.
 
-## Demonstrar o PostgreSQL local
+## Consultar o PostgreSQL local
 
-Os scripts `banco/init/01_schema.sql` e `banco/init/02_dados.sql` são executados na primeira inicialização, quando o volume de dados está vazio. Para consultar as tabelas e registros iniciais:
+Os scripts `banco/init/01_schema.sql` e `banco/init/02_dados.sql` são executados automaticamente quando o volume de dados está vazio. Para abrir o cliente PostgreSQL:
 
 ```bash
 docker compose exec banco psql -U postgres -d projeto_integrador
 ```
 
-Dentro do `psql`:
+No `psql`, consulte as tabelas, views e amostra:
 
 ```sql
 \dt
@@ -79,7 +79,7 @@ SELECT time, temperature_2m, relative_humidity_2m, precipitation
 FROM dataset_weather_goes ORDER BY time DESC LIMIT 5;
 ```
 
-Saia com `\q`. Veja [COMANDOS_DOCKER_AVALIACAO.md](../banco/COMANDOS_DOCKER_AVALIACAO.md) para mais consultas de demonstração.
+Saia com `\q`. Veja [Consultas e comandos do PostgreSQL](../banco/COMANDOS_DOCKER_AVALIACAO.md) para mais exemplos.
 
 ## Parar, reiniciar e preservar os dados
 
@@ -87,30 +87,30 @@ Saia com `\q`. Veja [COMANDOS_DOCKER_AVALIACAO.md](../banco/COMANDOS_DOCKER_AVAL
 docker compose down
 ```
 
-Esse comando remove containers e rede, mas preserva o volume nomeado `postgres_data`. Para subir novamente:
+Esse comando remove containers e rede, mas preserva o volume nomeado `postgres_data`. Para iniciar novamente:
 
 ```bash
 docker compose up -d
 ```
 
-Se mudar código, modelo ou configurações incorporadas às imagens, reconstrua:
+Se houver mudanças no código, no modelo ou nas configurações incorporadas às imagens, reconstrua:
 
 ```bash
 docker compose up --build -d
 ```
 
-**Atenção:** `docker compose down -v` remove volumes associados e pode apagar definitivamente os dados locais. Os scripts de inicialização não são executados de novo em um volume já existente.
+**Atenção:** `docker compose down -v` também remove volumes associados e pode apagar os dados locais. Os scripts de inicialização não são executados novamente em um volume existente. Use `down -v` apenas quando quiser apagar intencionalmente os dados locais.
 
 ## Solução de problemas
 
 | Sintoma | Verificação |
 |---|---|
-| Serviço de processamento falha no build | Artefatos `.joblib` e `manifest.json` existem em `backend/src/models/` e são compatíveis. |
-| Processamento não fica saudável | Consulte `docker compose logs processamento`; confirme validação do manifesto e modelo. |
-| Backend não retorna horários | Confira URL, credencial privada, tabela e permissões do Supabase; consulte logs do Backend. |
-| Frontend não exibe dados | Confira URL/chave pública do Supabase e políticas RLS. |
-| Erro de CORS | A origem do navegador deve corresponder a `FRONTEND_ORIGIN` configurada no Compose. |
-| Porta 5173, 8000 ou 5432 ocupada | Libere a porta ou ajuste o mapeamento e as URLs correspondentes. |
-| Banco local parece vazio após reiniciar | Confirme o volume `postgres_data`; scripts de init só executam em diretório de dados vazio. |
+| Serviço de processamento falha no build | Os dois artefatos existem em `backend/src/models/` e formam um par compatível? |
+| Processamento não fica saudável | Consulte `docker compose logs processamento`; confira a validação do manifesto e do modelo. |
+| Backend não retorna horários | Confira URL, credencial privada, tabela e permissões do Supabase; consulte os logs do Backend. |
+| Frontend não exibe dados | Confira URL, chave pública e políticas RLS do Supabase; confira o console do navegador. |
+| Erro de CORS | Confira se a origem do navegador está incluída em `FRONTEND_ORIGIN`. |
+| Porta 5173, 8000 ou 5432 ocupada | Libere a porta ou ajuste o mapeamento e as configurações correspondentes. |
+| Banco local parece vazio após reiniciar | Confira o volume `postgres_data`; scripts de init só executam quando o diretório de dados está vazio. |
 
 Não exponha valores do `.env` ao compartilhar logs ou capturas de tela.
