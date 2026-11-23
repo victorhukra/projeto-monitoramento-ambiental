@@ -1,281 +1,196 @@
-# Monitoramento ambiental — Londrina
+# Monitoramento Ambiental — Londrina
 
-Aplicação web do projeto de monitoramento ambiental e **simulação histórica da probabilidade de chuva na próxima hora**, usando dados meteorológicos armazenados no Supabase e o modelo v6.
+Versão integrada do Projeto Integrador de Monitoramento Ambiental com dados meteorológicos históricos, interface web e simulação experimental da probabilidade de chuva para uma hora. Esta documentação descreve o estado desta branch e orienta a demonstração da **entrega integrada de 23/11/2026**.
 
-Este README descreve como configurar e executar a versão presente neste repositório. Os documentos em `docs/integration/` detalham os contratos entre as equipes; `docs/originals/` contém READMEs antigos apenas para consulta.
+> A simulação utiliza registros históricos e um modelo já treinado. Não é uma previsão meteorológica ao vivo, e o modelo não é treinado a cada requisição.
 
-## 1. O que a aplicação contém
+## O que está integrado
 
-- **Frontend:** React 18 + Vite. Apresenta o painel meteorológico, consulta dados do Supabase e possui o fluxo de busca histórica e previsão experimental.
-- **Backend:** Flask. Consulta os registros meteorológicos no Supabase, valida os dados de T e T−1h, executa o modelo v6 e grava/consulta as previsões.
-- **Banco:** Supabase, acessado pelo Backend via REST para a inferência e pelo Frontend para as consultas de visualização já existentes.
-- **Modelo:** pacote serializado `weather_ensemble.joblib` acompanhado de `manifest.json`. O modelo é carregado na inicialização do Backend, não treinado a cada previsão.
+O `compose.yaml` declara quatro serviços:
 
-### Rotas do Backend implementadas
-
-| Método | Rota | Função |
+| Serviço | Responsabilidade | Acesso |
 |---|---|---|
-| `GET` | `/health` | Estado do Backend, modelo e banco |
-| `GET` | `/available-times` | Primeiro e último dia disponível no dataset |
-| `GET` | `/available-times?date=AAAA-MM-DD` | Horários elegíveis do dia |
-| `GET` | `/weather-inputs?reference_time=...` | Medidas de T e pressão de T−1h, sem gerar previsão |
-| `POST` | `/predict` | Executa o modelo e persiste a previsão |
-| `GET` | `/predictions` | Consulta o histórico de previsões |
-| `DELETE` | `/predictions/<prediction_id>` | Exclui uma previsão específica do histórico |
-| `POST` | `/internal/predict` | Rota interna de inferência sem persistência; não é usada pelo fluxo normal do Frontend |
+| `frontend` | Interface React/Vite para consultar dados e interagir com a simulação. | http://localhost:5173 |
+| `backend` | API Flask, validação da solicitação, consulta das entradas e persistência do histórico de previsões. | http://localhost:8000 |
+| `processamento` | Serviço Python interno que carrega e valida os artefatos do modelo e executa a inferência. | Rede interna do Compose, porta 8100; sem porta publicada no host |
+| `banco` | PostgreSQL 15 local, inicializado com schema, amostra de dados e volume persistente. | `127.0.0.1:5432` |
 
-O fluxo principal da interface é:
+Fluxo de previsão: **Frontend → Backend → Processamento → Backend → Supabase**. O Backend consulta os dados meteorológicos no Supabase, envia as entradas validadas ao serviço `processamento` e grava a previsão no Supabase. O Frontend também lê dados do Supabase para os elementos de visualização existentes.
 
-1. Selecionar uma data e um horário disponibilizados pelo Backend.
-2. Buscar e visualizar as medidas meteorológicas daquele instante.
-3. Solicitar a previsão experimental.
-4. O Backend consulta novamente os dados, executa o modelo v6 e grava o resultado.
-5. O Frontend apresenta o resultado e atualiza o histórico.
+O PostgreSQL local é inicializado separadamente pelos scripts em `banco/init/` e serve para demonstrar schema, dados iniciais e persistência local. Na configuração atual, o fluxo da aplicação descrito acima usa o Supabase; o PostgreSQL local não substitui nem sincroniza automaticamente as tabelas do Supabase. Para a demonstração completa de consulta, inferência e histórico, configure o Supabase e os artefatos do modelo.
 
-A simulação é **histórica**: não representa uma previsão meteorológica ao vivo e não aceita qualquer data futura.
+## Pré-requisitos
 
-## 2. Requisitos
+- Git e Docker com o plugin Docker Compose.
+- Acesso ao projeto Supabase da equipe e suas tabelas/permissões.
+- Artefatos de modelo compatíveis: `weather_ensemble.joblib` e `manifest.json`.
+- Portas locais 5173, 8000 e 5432 disponíveis.
 
-Instale:
+O arquivo do modelo não deve ser presumido como disponível no clone: a imagem de processamento o copia de `backend/src/models/` durante o build. Obtenha os dois artefatos da equipe responsável pelo modelo, confirme que pertencem à mesma versão e coloque-os nesse diretório antes de construir as imagens. Não versionar chaves secretas ou credenciais.
 
-- **Git**
-- **Python 3.14** (versão usada na validação deste projeto)
-- **Node.js e npm** compatíveis com o `frontend/package-lock.json` (validação realizada com Node 26.13.0 e npm 11.20.0)
-- Acesso ao projeto Supabase utilizado pela equipe
-- Os arquivos do modelo v6, quando for necessário gerar previsões reais
+## Configuração e execução com Docker Compose
 
-Os comandos abaixo usam PowerShell no Windows. No macOS/Linux, adapte a ativação do ambiente virtual e a cópia dos arquivos `.env`.
-
-## 3. Baixar o projeto
-
-```powershell
-git clone https://github.com/victorhukra/projeto-monitoramento-ambiental.git
-cd projeto-monitoramento-ambiental
-```
-
-O ZIP também pode ser extraído diretamente; nesse caso, entre na pasta `projeto-monitoramento-ambiental-main`.
-
-## 4. Configurar e executar o Backend
-
-Abra um terminal na raiz do projeto:
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements-lock.txt
-```
-
-Crie o arquivo de configuração local a partir do exemplo:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Edite `backend/.env`:
-
-```dotenv
-# Caminhos absolutos para os dois artefatos do modelo v6
-MODEL_PATH=C:/dados-monitoramento/model/weather_ensemble.joblib
-MODEL_MANIFEST_PATH=C:/dados-monitoramento/model/manifest.json
-
-# Credenciais do projeto Supabase usadas exclusivamente pelo Backend
-SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=sua_chave_service_role
-
-# Origem do Frontend permitida pelo CORS
-FRONTEND_ORIGIN=http://localhost:5173
-```
-
-**Importante sobre a configuração:**
-
-- O Backend carrega automaticamente as variáveis de `backend/.env` ao inicializar.
-- `MODEL_PATH` e `MODEL_MANIFEST_PATH` devem apontar para os arquivos reais fornecidos pelo responsável pelo treinamento. O manifesto é validado junto com o hash SHA-256, versão, features e entradas esperadas.
-- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` são necessários para as consultas e gravações do Backend. A chave `service_role` é secreta: nunca a coloque no Frontend, no Git ou em mensagens públicas.
-- `FRONTEND_ORIGIN` deve corresponder exatamente à origem em que o Vite será executado. Se mudar a porta ou o host do Frontend, atualize essa variável e reinicie o Backend.
-- Sem as credenciais do banco, o servidor pode iniciar, mas as rotas que consultam dados retornarão indisponibilidade.
-- Sem o modelo e seu manifesto, o servidor pode iniciar, mas `/health` indicará que o modelo não foi carregado e `/predict` não conseguirá gerar uma previsão real.
-
-Inicie o Backend, ainda dentro de `backend/`:
-
-```powershell
-python -m flask --app app.main run --host 127.0.0.1 --port 8000
-```
-
-Mantenha esse terminal aberto. Em outro terminal, teste:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-A resposta inclui `model_loaded`, `database_configured` e `integration_ready`. Para o fluxo real de previsão, os três componentes precisam estar configurados corretamente. `status: ok` sozinho significa apenas que o servidor respondeu.
-
-### Testes do Backend
-
-Com o ambiente virtual ativado e dentro de `backend/`:
-
-```powershell
-python -m unittest discover -s tests -v
-```
-
-## 5. Configurar e executar o Frontend
-
-Abra outro terminal na raiz do projeto:
-
-```powershell
-cd frontend
-npm ci
-Copy-Item .env.example .env
-```
-
-Edite `frontend/.env`:
-
-```dotenv
-# Configuração do Supabase usada pelas consultas de visualização do Frontend
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
-VITE_SUPABASE_ANON_KEY=sua_chave_publica_anon_ou_publishable
-
-# URL base do Backend Flask, sem barra no final
-VITE_API_URL=http://127.0.0.1:8000
-```
-
-Observações:
-
-- Use somente a chave pública `anon` ou `publishable` no Frontend. **Nunca use `service_role` ou `sb_secret` no navegador.**
-- A leitura direta do Supabase pelo Frontend depende das políticas/permissões RLS configuradas no projeto.
-- `VITE_API_URL` aponta para o Backend Flask. Se o Backend estiver em outro endereço, ajuste o valor.
-- Variáveis `VITE_*` são incorporadas ao código do navegador. Não coloque segredos nelas.
-- Sempre reinicie o Vite depois de alterar o `.env`.
-
-Inicie o Frontend:
-
-```powershell
-npm run dev -- --host 127.0.0.1
-```
-
-Acesse:
-
-- Aplicação: http://127.0.0.1:5173/
-- Tela de integração: http://127.0.0.1:5173/integracao
-
-Deixe os terminais do Backend e do Frontend abertos enquanto utiliza a aplicação.
-
-### Testes e build do Frontend
-
-Dentro de `frontend/`:
-
-```powershell
-npm test
-npm run lint
-npm run build
-```
-
-## 6. Banco de dados e modelo
-
-### Supabase
-
-O Backend acessa o Supabase pela API REST e espera encontrar:
-
-- Tabela meteorológica `dataset_weather_goes`, com `id`, `time`, `temperature_2m`, `relative_humidity_2m`, `pressure_msl` e `cloud_cover`.
-- Tabela de previsões `resultados_previsoes_ia`, com os campos utilizados para armazenar o resultado, incluindo `request_id`, `prediction_id`, `created_at`, os dados meteorológicos e os campos da previsão.
-
-O horário armazenado na tabela meteorológica deve seguir a convenção adotada pela equipe para Londrina. O serviço interpreta os horários na zona `America/Sao_Paulo`.
-
-A migration `backend/sql/20261108_secure_prediction_access.sql` ajusta a obrigatoriedade de `request_id` e as permissões da tabela de resultados para que o Backend use a função `service_role`. Ela **não cria as tabelas nem substitui a configuração inicial do banco**. A equipe responsável pelo Supabase deve revisar e aplicar essa migration no projeto correto, depois de confirmar os dados existentes e as permissões.
-
-### Modelo v6
-
-O modelo precisa ser entregue separadamente como:
-
-- `weather_ensemble.joblib`
-- `manifest.json`
-
-
-O modelo utiliza quatro medidas em T — temperatura, umidade relativa, pressão e cobertura de nuvens — e a pressão de exatamente T−1h. O Backend calcula as features derivadas exigidas pela v6. Não é necessário enviar as sete features pelo Frontend e não ocorre treinamento a cada clique.
-
-Sem os artefatos válidos do modelo, a aplicação pode abrir e o Backend pode responder ao health check, mas não deve ser considerada pronta para gerar previsões reais.
-
-## 7. Contrato de geração e histórico
-
-O Frontend envia para `POST /predict` somente:
-
-```json
-{
-  "mode": "historical",
-  "reference_time": "2026-09-01T14:00:00-03:00"
-}
-```
-
-Também envia o cabeçalho `Idempotency-Key` com um UUID. A chave deve ser mantida ao tentar novamente o mesmo pedido após timeout ou falha de rede. Não gere outra chave para contornar um pedido de resultado incerto.
-
-- `201`: previsão gravada pela primeira vez.
-- `200`: pedido repetido com a mesma chave e os mesmos dados; o Backend devolve o resultado já gravado.
-- `409`: conflito de idempotência ou pedido em processamento.
-- `422`: chave, horário ou dados inválidos.
-- `503`: banco, modelo ou gravação indisponível.
-
-O histórico usa `GET /predictions` com `created_from`, `created_to`, `limit` e, quando necessário, `cursor`. O intervalo de datas considera o momento em que a previsão foi **gerada**, não o horário histórico escolhido como referência.
-
-
-
-## 8. Problemas comuns
-
-| Problema | O que conferir |
-|---|---|
-| Frontend informa que o Backend não está configurado | `VITE_API_URL` no `frontend/.env`; reinicie o Vite |
-| Erro de conexão com o Backend | Backend em execução, endereço/porta e `FRONTEND_ORIGIN` |
-| Erro de CORS no navegador | `FRONTEND_ORIGIN` deve corresponder exatamente ao host e à porta do Frontend |
-| `/health` mostra `database_configured: false` | `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` em `backend/.env` |
-| `/health` mostra `model_loaded: false` | Caminhos, existência e compatibilidade do `.joblib` e do `manifest.json` |
-| `/predict` retorna `MISSING_PREVIOUS_HOUR` | Não existe registro meteorológico válido exatamente uma hora antes de T |
-| Não aparecem datas/horários | Verifique a tabela `dataset_weather_goes`, seus registros e os campos obrigatórios |
-| Frontend não carrega dados do painel | `VITE_SUPABASE_URL`, chave pública e políticas RLS |
-
-## Execução local com Docker Compose
-
-O Compose inicia três contêineres: o `frontend`, o `backend` e o `banco` (**PostgreSQL 15** local na porta `5432`, com volume persistente `postgres_data` e criação/população automática via `banco/init/`). O backend e o frontend continuam conectados ao Supabase remoto via variáveis do `.env`; para demonstração e avaliação do banco local via `psql`, consulte [`banco/COMANDOS_DOCKER_AVALIACAO.md`](banco/COMANDOS_DOCKER_AVALIACAO.md).
-
-**1. Prepare o ambiente.** Instale o Docker e o plugin Docker Compose. Na raiz do projeto, crie o arquivo de configuração se ele ainda não existir:
+Clone e acesse a branch de entrega integrada:
 
 ```bash
+git clone --branch entrega-integrada-processamento https://github.com/victorhukra/projeto-monitoramento-ambiental.git
+cd projeto-monitoramento-ambiental
 cp .env.example .env
 ```
 
-No `.env` da raiz, preencha os dados do projeto Supabase:
+No Windows PowerShell, use `Copy-Item .env.example .env` no lugar de `cp`.
 
-```env
-SUPABASE_URL=https://SEU-PROJETO.supabase.co
-VITE_SUPABASE_ANON_KEY=SUA_CHAVE_PUBLICA
-SUPABASE_SERVICE_ROLE_KEY=SUA_CHAVE_SECRETA
+Edite o `.env` da raiz e configure:
+
+```dotenv
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_chave_secreta
+VITE_SUPABASE_ANON_KEY=sua_chave_publica
 ```
 
-Informe a URL sem barra final. A chave `anon` é pública; a `service_role` é secreta e deve permanecer apenas no backend. Não compartilhe nem versione o `.env`. As tabelas, os dados e as permissões precisam existir no Supabase, conforme a seção [Supabase](#supabase).
+O exemplo já contém `VITE_SUPABASE_URL`; confirme que corresponde ao projeto Supabase autorizado pela equipe. `SUPABASE_SERVICE_ROLE_KEY` é segredo, deve ser usado somente pelo Backend e nunca pode ser publicado, enviado ao Frontend ou commitado. A chave `VITE_SUPABASE_ANON_KEY` é pública e fica exposta no navegador; as leituras dependem das políticas RLS corretas. Não compartilhe o `.env` nem logs que revelem credenciais.
 
-**2. Confira o modelo.** O arquivo `backend/src/models/weather_ensemble.joblib` não é versionado. Coloque nesse caminho o artefato correspondente ao manifesto `backend/src/models/manifest.json`. Sem ele, o backend inicia, mas não consegue gerar previsões.
-
-**3. Construa e inicie os contêineres.** Na raiz do projeto, execute:
+Construa e inicie os quatro serviços a partir da raiz:
 
 ```bash
 docker compose up --build -d
 docker compose ps
 ```
 
-Os serviços `frontend`, `backend` e `banco` devem aparecer em execução. Na primeira vez, o download das imagens e a instalação das dependências podem levar alguns minutos.
-
-**4. Verifique a aplicação.**
-
-1. Abra [http://localhost:8000/health](http://localhost:8000/health) e confira se `model_loaded` e `database_configured` são `true`. Esse endpoint informa a configuração, mas não testa a conexão com o banco.
-2. Abra [http://localhost:8000/available-times](http://localhost:8000/available-times) para testar a consulta ao Supabase. Uma resposta com `min_date` e `max_date` confirma a consulta; valores `null` podem indicar uma tabela vazia.
-3. Abra [http://localhost:5173](http://localhost:5173) e confira se o painel carrega os dados. Para gerar uma previsão, escolha um horário com dados válidos em T e T−1 hora.
-
-**5. Consulte os logs e pare os contêineres.**
+Verifique os logs e o estado da API:
 
 ```bash
-docker compose logs --tail=100 frontend backend banco
+docker compose logs --tail=100 banco processamento backend frontend
+curl http://localhost:8000/health
+```
+
+Abra http://localhost:5173. O endpoint `/health` informa estado do Backend, modelo e configuração do banco; confirme que o modelo e as integrações estão prontos. A disponibilidade do processo/container, isoladamente, não comprova o fluxo funcional.
+
+## Demonstração integrada
+
+1. Abra a interface e confirme que os dados meteorológicos são exibidos.
+2. Escolha uma data e horário disponíveis no histórico.
+3. Consulte as entradas meteorológicas do horário escolhido.
+4. Solicite a simulação de chuva para esse horário.
+5. Confirme que a resposta apresenta a probabilidade/classe prevista e que a previsão aparece no histórico.
+6. Consulte os logs dos serviços se algum passo falhar; não exiba credenciais na apresentação.
+
+A simulação é histórica. O Backend exige dados válidos no instante `T` e, para a entrada temporal do modelo, pressão da hora anterior `T−1h`. A disponibilidade de horários depende dos dados configurados no Supabase e não significa que qualquer data futura possa ser selecionada.
+
+### Rotas principais do Backend
+
+| Método | Rota | Uso |
+|---|---|---|
+| `GET` | `/health` | Estado do Backend, modelo e configuração do banco. |
+| `GET` | `/available-times` | Intervalo de datas disponível. |
+| `GET` | `/available-times?date=AAAA-MM-DD` | Horários elegíveis em uma data. |
+| `GET` | `/weather-inputs?reference_time=...` | Entradas meteorológicas disponíveis sem executar inferência. |
+| `POST` | `/predict` | Executa a inferência integrada e persiste o resultado. |
+| `GET` | `/predictions` | Consulta o histórico de previsões. |
+| `DELETE` | `/predictions/<prediction_id>` | Remove uma previsão específica do histórico. |
+| `POST` | `/internal/predict` | Inferência interna sem persistência; não é o fluxo normal da interface. |
+
+O serviço de processamento expõe internamente `GET /health` e `POST /predict`. Ele é acessado pelo Backend por `http://processamento:8100`, usando o nome do serviço na rede Compose.
+
+## Banco local, dados iniciais e persistência
+
+O serviço `banco` usa PostgreSQL 15 e monta `banco/init/` em `/docker-entrypoint-initdb.d`. Na primeira inicialização de um volume vazio, os scripts em ordem de nome criam o schema e carregam dados de demonstração:
+
+- `banco/init/01_schema.sql`: tabelas, índices, view `clima_atual` e permissões locais.
+- `banco/init/02_dados.sql`: amostra inicial de medições e registros de exemplo. O script documenta 792 medições horárias.
+
+A inicialização automática ocorre somente quando o diretório de dados está vazio. Para conferir as tabelas e a amostra local:
+
+```bash
+docker compose exec banco psql -U postgres -d projeto_integrador
+```
+
+No `psql`:
+
+```sql
+\dt
+\dv
+SELECT count(*) FROM dataset_weather_goes;
+SELECT time, temperature_2m, relative_humidity_2m, precipitation
+FROM dataset_weather_goes ORDER BY time DESC LIMIT 5;
+```
+
+Saia com `\q`. O volume nomeado `postgres_data` preserva os dados locais entre reinicializações. `docker compose down` remove os containers, mas mantém o volume; **`docker compose down -v` apaga o volume e os dados locais**. Os scripts de inicialização não são reaplicados em volume já existente.
+
+A tabela meteorológica também é esperada no Supabase como `dataset_weather_goes`; a aplicação espera a tabela de previsões `resultados_previsoes_ia`. Os dados do PostgreSQL local não são sincronizados com o Supabase. Para requisitos e configuração do schema remoto, consulte o SQL e a migration documentados em `backend/sql/`.
+
+## Modelo e processamento
+
+O serviço `processamento` carrega `weather_ensemble.joblib` e `manifest.json` na inicialização. A validação verifica hash SHA-256, versão, features e entradas requeridas; inconsistências impedem a inicialização do serviço. As variáveis de caminho no Compose são:
+
+- Processamento: `/app/models/weather_ensemble.joblib` e `/app/models/manifest.json`.
+- Backend: `/app/src/models/weather_ensemble.joblib` e `/app/src/models/manifest.json`.
+
+Os arquivos da imagem de processamento são copiados de `backend/src/models/`. Use o par de artefatos aprovado pela equipe e reconstrua as imagens depois de atualizá-los:
+
+```bash
+docker compose up --build -d
+```
+
+## Testes dos módulos
+
+Os testes abaixo são locais e exigem as dependências dos módulos instaladas:
+
+```bash
+# Backend: a partir de backend/
+python -m unittest discover -s tests -v
+
+# Frontend: a partir de frontend/
+npm ci
+npm test
+npm run lint
+npm run build
+```
+
+Para a entrega integrada, além dos testes unitários, demonstre o fluxo real com os quatro serviços, Supabase e modelo configurados. Registre nos documentos individuais os comandos e resultados efetivamente observados; este README não declara testes como executados em uma máquina específica.
+
+## Problemas comuns
+
+| Sintoma | O que conferir |
+|---|---|
+| Compose não inicia | Docker ativo, portas 5173/8000/5432 livres e `.env` preenchido na raiz. |
+| Build do processamento falha ao copiar o modelo | Presença e nomes dos dois arquivos em `backend/src/models/`; valide que são o par correto. |
+| `model_loaded: false` ou serviço `processamento` não fica saudável | Compatibilidade entre artefato e manifesto; consulte `docker compose logs processamento backend`. |
+| `/available-times` falha ou não retorna horários | URL/chave secreta do Supabase, tabela e permissões; consulte logs do Backend. |
+| Interface não carrega dados | URL e chave pública do Supabase e políticas RLS; confira console do navegador. |
+| Erro de CORS | Origem do Frontend deve corresponder a `FRONTEND_ORIGIN` configurada no Compose. |
+| Inferência indica ausência de hora anterior | Confirme registro meteorológico válido exatamente em `T−1h`. |
+| Dados locais desapareceram | Confirme que não foi usado `docker compose down -v`; confira o volume `postgres_data`. |
+
+Para parar os serviços sem apagar o banco local:
+
+```bash
 docker compose down
 ```
 
-Para acompanhar os logs em tempo real, use `docker compose logs -f`; `Ctrl+C` interrompe apenas a visualização. Para iniciar novamente, use `docker compose up -d`. Após alterar código, modelo ou `.env`, execute `docker compose up --build -d`; as variáveis do frontend são incorporadas à imagem durante o build.
+## Estrutura relevante
 
-Consulte também o [guia de execução dos contêineres](docs/execucao-docker.md) para mais detalhes e solução de problemas.
+```text
+backend/       API Flask, configuração, testes e SQL de integração
+banco/init/    schema e dados iniciais do PostgreSQL local
+banco/doc/     documentação individual do módulo Banco
+frontend/      aplicação React/Vite
+processamento/ serviço Python de inferência e sua documentação
+compose.yaml   orquestração dos quatro serviços
+docs/          arquitetura, execução e documentos de integração/histórico
+```
+
+Cada módulo deve manter sua pasta `doc/` e um arquivo `.txt` individual para cada desenvolvedor que efetivamente contribuiu nele. `processamento/doc/INSTRUCOES.txt` é somente um modelo: não substitui os relatos individuais. Não invente nomes, tarefas, testes ou commits; registre contribuições reais em `frontend/doc/`, `backend/doc/`, `banco/doc/` e `processamento/doc/` conforme a participação de cada pessoa.
+
+## Situação da entrega de 23/11/2026
+
+A branch contém o Compose com os quatro serviços, scripts de criação e população do PostgreSQL local, volume persistente e integração entre Backend e serviço Python. A demonstração de ponta a ponta depende também da configuração e acesso ao Supabase e da disponibilidade do modelo compatível. Antes da apresentação, confirme em uma máquina limpa os comandos de instalação, os quatro serviços saudáveis, consulta de dados, processamento de uma amostra, gravação e visualização da previsão. O PostgreSQL local inicializado e o Supabase são fontes distintas nesta configuração; não apresente o primeiro como se estivesse alimentando automaticamente o fluxo da aplicação.
+
+A versão integrada desta branch é a referência de código para a apresentação. Verifique o compartilhamento de acesso ao repositório com o professor e mantenha os arquivos individuais de contribuição atualizados.
+
+## Documentação complementar
+
+- [Arquitetura dos containers](docs/arquitetura-containers.md)
+- [Execução com Docker Compose](docs/execucao-docker.md)
+- [Comandos para demonstração do PostgreSQL](banco/COMANDOS_DOCKER_AVALIACAO.md)
+- [Documentação do serviço de processamento](processamento/README.md)
